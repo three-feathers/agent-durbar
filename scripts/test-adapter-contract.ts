@@ -52,7 +52,7 @@ export interface ContractReport {
 }
 
 const ID_RE = /^[a-z][a-z0-9-]{0,31}$/;
-const TYPES = new Set(['user', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'sandbox', 'autopilot']); // spec 087 added `sandbox` (the OS sandbox state); spec 099 added `autopilot`
+const TYPES = new Set(['user', 'status', 'permission', 'grants', 'thinking', 'output', 'toolCall', 'subagent', 'usage', 'context', 'model', 'compaction', 'mcp', 'limit', 'sandbox', 'autopilot', 'assisted']); // spec 087 added `sandbox` (the OS sandbox state); spec 099 added `autopilot`; spec 003 FR-127 added `assisted`
 const ALL_MODES: PermissionMode[] = ['read-only', 'ask', 'allow'];
 
 /** Waits (a few event-loop turns at most) for something that must already be on its way. */
@@ -144,6 +144,7 @@ export async function runContract(name: string, make: () => ContractTarget, hook
     assert.strictEqual(has('generateText'), !!cap.oneShot, M('C2', 'generateText() <=> capabilities.oneShot'));
     assert.strictEqual(has('setRemote'), !!cap.remote, M('C2', 'setRemote() <=> capabilities.remote (spec 054 FR-001)'));
     assert.strictEqual(has('setAutopilot'), !!cap.autopilot, M('C2', 'setAutopilot() <=> capabilities.autopilot (spec 099 FR-001)'));
+    assert.strictEqual(has('setAssisted'), !!cap.assistedApproval, M('C2', 'setAssisted() <=> capabilities.assistedApproval (spec 003 FR-121)'));
     assert.strictEqual(has('renameSession'), !!cap.renameSession, M('C2', 'renameSession() <=> capabilities.renameSession (spec 059 FR-007)'));
     assert.strictEqual(has('accountQuota'), !!cap.accountQuota, M('C2', 'accountQuota() <=> capabilities.accountQuota (spec 011 FR-081)'));
     assert.strictEqual(has('deleteSession'), !!cap.deleteSession, M('C2', 'deleteSession() <=> capabilities.deleteSession (spec 006 FR-028)'));
@@ -373,6 +374,7 @@ const NOT_IN_FAKE = [
   'continueWithoutSandbox', 'sandboxHost', // spec 087: real adapters only (C2 below)
   'generateImage', // spec 096 FR-001: declared only so far; no adapter has it until T030 and T031 (probes P2, P8), which add its C2 line
   'mcpContext', // spec 100: real adapters only (C2 below)
+  'setAssisted', // spec 003 FR-121: Copilot only (C2 below)
 ];
 
 /** The optional members of `interface AgentAdapter`, read from `src/adapters/types.ts` with the TypeScript parser (no hand-kept copy). */

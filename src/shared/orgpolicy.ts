@@ -48,6 +48,8 @@ export interface OrgPolicy {
   mcp: { allow?: OrgMcpRule[]; allowMark?: 'blocked' | 'doubt'; deny: OrgMcpRule[]; denyMark?: 'blocked' | 'doubt'; all?: OrgMark; builtinSkipsDeny: boolean };
   /** MCP tool deny rules in Claude Code's `mcp__<server>__<tool>` form (with `*` wildcards), and a mark for every tool. */
   tools: { deny: string[]; all?: OrgMark };
+  /** Spec 003 FR-127: the app's own reviewer (Copilot's assisted approvals) is turned off by the policy (`blocked`), or may be (`doubt`). */
+  assisted?: OrgMark;
 }
 
 /** A question's answer: the words to show, and whether main refuses it (`blocked`, `fatal`) or only shows it (`doubt`). */
@@ -111,6 +113,7 @@ export function wholeOrgPolicy(app: string, paths: string[], problems: string[],
   p.models.all = mark;
   p.mcp.all = mark;
   p.tools.all = mark;
+  p.assisted = mark;
   return p;
 }
 
@@ -196,6 +199,12 @@ export const orgDoubtText = (app: string): string => `Your organization's ${app}
 export function verdictOf(p: OrgPolicy, mark: OrgMark | undefined): OrgVerdict | undefined {
   if (!mark) return undefined;
   return { why: mark === 'doubt' ? orgDoubtText(p.app) : mark === 'fatal' ? orgFatalText(p.app) : orgBlockedText(p.app), refuse: mark !== 'doubt' };
+}
+
+/** Spec 003 FR-127: why the app's reviewer switch is refused (`blocked`, `fatal`) or only advised against (`doubt`); undefined = no word. */
+export function assistedVerdict(p: OrgPolicy | undefined): OrgVerdict | undefined {
+  if (!p || !p.found || !p.assisted) return undefined;
+  return p.assisted === 'blocked' ? { why: `Your organization turned off ${p.app}'s assisted approvals`, refuse: true } : verdictOf(p, p.assisted);
 }
 
 export function modeVerdict(p: OrgPolicy | undefined, mode: string): OrgVerdict | undefined {
@@ -390,6 +399,8 @@ export interface OrgPolicyAppView {
   problems: string[];
   /** Per mode: the words, and whether it is refused (blocked) or only advice (doubt). */
   modes: Partial<Record<OrgMode, OrgVerdict>>;
+  /** Spec 003 FR-127: the reviewer switch (assisted approvals): refused or advice; absent = no word. */
+  assisted?: OrgVerdict;
   counts: { modelAllow: number | null; modelDeny: number; mcpAllow: number | null; mcpDeny: number; toolDeny: number };
 }
 
@@ -406,6 +417,7 @@ export function orgPolicyView(p: OrgPolicy): OrgPolicyAppView {
     paths: [...p.paths],
     problems: [...p.problems],
     modes,
+    ...(assistedVerdict(p) ? { assisted: assistedVerdict(p) } : {}),
     counts: { modelAllow: p.models.allow ? p.models.allow.length : null, modelDeny: p.models.deny.length, mcpAllow: p.mcp.allow ? p.mcp.allow.length : null, mcpDeny: p.mcp.deny.length, toolDeny: p.tools.deny.length },
   };
 }

@@ -76,7 +76,7 @@ import { missingChecker } from './mcpcmdcheck';
 import { mergeLoginPath, nodeLoginPathDeps, readLoginShellPath } from './loginpath';
 import { renameOp, titleSyncOf } from './sessionnames';
 import { adapterForAdd, createRouter, previousSessionsOf } from '../adapters/router';
-import { endSessionOp, mcpNudgeOp, restorable, scheduledSendOp, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
+import { assistedOnEvent, endSessionOp, mcpNudgeOp, restorable, scheduledSendOp, sendWithSlash, startGuardOp, stopTurnOp, validMode } from './agentops';
 import type { OpsDeps, StartGuardDeps } from './agentops';
 import { adapterOf } from './folders';
 import type { AgentAdapter, AgentEvent } from '../adapters/types';
@@ -136,10 +136,10 @@ import { initSimGuard, simRefusedChannels } from './ipcguard';
 import { OrgPolicyCache } from './orgpolicy';
 import { register as registerOrgPolicyIpc } from './ipc/orgpolicy';
 import { register as registerSelfUpdateIpc } from './ipc/selfupdate';
-import { SelfUpdater, realSelfUpdateTimer } from './selfupdate';
+import { SelfUpdater, realSelfUpdateTimer, wireSelfUpdateResume } from './selfupdate';
 import { loadUpdateSource } from './updatesource';
 import { updatePolicy } from './updatepolicy';
-import { electronRequestFactory, makeFeedGet } from './netget';
+import { updateFeedGet } from './netget';
 import { markSignedOut, withSignIn } from './authcheck';
 import type { SignInAnswer } from './authcheck';
 import { SettingsStore } from './settings';
@@ -333,6 +333,7 @@ router.onEvent((e) => autopilotOps.onEvent(e));
 /** Spec 005 FR-411: the raw text of the argument each chip shows, for Copy (main writes the clipboard; the window gets only `argsMasked`). */
 const toolArgCopies = createToolArgCopies({ write: (t) => clipboard.writeText(t) });
 router.onEvent((e) => { if (!mcp.hidesEvent(e)) toRenderer('agent:event', toolArgCopies.see(e, toWindowEvent(e, outward))); }); // spec 005 FR-411: `argsMasked` on the window's copy only (the debug log's is unchanged); spec 087 (review rounds 7-8): the sandbox event cleaned too; spec 058 FR-215: an elicitation main declined is not shown
+router.onEvent((e) => assistedOnEvent({ agents, log: (a, decision, action) => logActivity(a, decision, action) }, e)); // spec 003 FR-127, FR-129: main's reviewer state follows a fallback or the end of the session (tested in agentops)
 // Spec 087 FR-011: the OS sandbox state is kept on the agent's info (cleaned: own known fields, reason masked and cut), so a reloaded
 // window gets it from agents:list; never saved
 router.onEvent((e) => {
@@ -470,8 +471,11 @@ function folderSetupStart(key: string, dirs: readonly string[], appId: string, t
   return { mcpServers: ap.mcpServers, ...(any ? { folderSetup: { hooks: ap.hooks, rules: ap.rules } } : {}), ...(hasFolderRules(ap) ? { rules: true as const } : {}) };
 }
 
+/** spec 116 F1: the folders of a session that is not in `agents` yet (the start runs before `agents.set`), as `officeFolders` lists a live one. */
+const startingFolders = (a: AgentInfo): string[] => collectOfficeFolders([{ key: wsKey(a), folders: rootsOf(a), workspaceFile: a.workspaceFile }], [], cappedWorkspaceReader(fs, memoryGitFlags(fs.constants), codeWorkspaceFoldersFromText, (p) => fs.realpathSync.native(p)));
+
 const startOptionsFor = (a: AgentInfo, resumeSessionId?: string) => {
-  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort), getMemoryOps()?.readRoots() ?? []), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
+  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort), getMemoryOps()?.readRoots(startingFolders(a)) ?? []), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
   const appId = router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId;
   const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], appId, new Set(Object.keys(base.mcpServers)));
   // spec 087 FR-019 (the organization policy, read in main) and FR-007c (the stored choice); the adapter decides what they mean
@@ -730,7 +734,7 @@ const scheduleDeps = (file: string): SchedulerDeps => ({
 });
 
 // The handler bodies that refuse a setting a live session cannot take live in agentops.ts (spec 012 FR-054); `store` is read when a handler runs.
-const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }), endAutopilot: (a) => autopilotOps.endForMode(a), autopilotStopSeen: (id) => autopilotOps.stopSeen(id) };
+const opsDeps: OpsDeps = { agents, router, get store() { return folderStore; }, wsKey, sessionKey: (a) => resumeIdFor(a.id), log: (a, decision, action) => logActivity(a, decision, action), orgRefusal: (a, mode) => orgPolicies.refusalNow(appIdOf(a.id), { mode }), orgAssistedRefusal: (a) => orgPolicies.refusalNow(appIdOf(a.id), { assisted: true }), remoteOn: (id) => remoteOps.engaged(id), endAutopilot: (a) => autopilotOps.endForMode(a), autopilotStopSeen: (id) => autopilotOps.stopSeen(id) };
 
 /* DURBAR_THEME (spec 040 FR-008): a theme for this run only, never saved; a pick in Settings replaces it and is saved as usual. */
 let runTheme: string | undefined;
@@ -1173,7 +1177,8 @@ function createWindow(): void {
   // review on #721: a reload (or a crash) of the window drops any open-sessions dialog, so a lock waiting for its answer is released
   win.webContents.on('did-start-navigation', (d) => { if (d.isMainFrame && !d.isSameDocument) harnessIpc.releaseAsking(); });
   win.webContents.on('render-process-gone', () => harnessIpc.releaseAsking());
-  win.webContents.once('did-finish-load', () => { void adaptersList(false).then(() => harnessIpc.checker.scheduleStart()).catch(() => undefined); });
+  // spec 118 FR-462 (T014): Durbar's own daily check starts in the same chain, after the office is shown and detection has finished (a failed detection does not stop it)
+  win.webContents.once('did-finish-load', () => { void adaptersList(false).then(() => harnessIpc.checker.scheduleStart()).catch(() => undefined).then(() => selfUpdater?.start()); });
   void win.loadFile(INDEX_HTML, { query });
   // Dev: DURBAR_SHOT=/tmp/out.png [DURBAR_SHOT_SIZE=1280x800] [DURBAR_SHOT_CLICK=sim-1] saves a screenshot and quits.
   const shot = dev.DURBAR_SHOT;
@@ -1221,9 +1226,10 @@ app.whenReady().then(() => {
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
-  // spec 118 FR-004: packaged builds only, never the simulator; the request only through makeFeedGet (FR-007), the policy read each time (FR-005).
-  // NOT started until T014 (the Update card and the Settings switch): nothing calls selfUpdater's start here, so no request is made.
-  selfUpdater = new SelfUpdater({ packaged: app.isPackaged, simulator: SIMULATOR, source: loadUpdateSource(), running: app.getVersion(), policy: updatePolicy, store: () => settingsStore, get: makeFeedGet(electronRequestFactory()), now: Date.now, timer: realSelfUpdateTimer });
+  // spec 118 FR-004: packaged builds only, never the simulator; the request only through makeFeedGet on the update session (FR-007, T507: updateFeedGet), the policy read each time (FR-005).
+  // T014 (FR-462): started after the window's first load (below, after spec 081's start check); the window hears of each finished check; the release page only from main's feed.
+  selfUpdater = new SelfUpdater({ packaged: app.isPackaged, simulator: SIMULATOR, source: loadUpdateSource(), running: app.getVersion(), policy: updatePolicy, store: () => settingsStore, get: updateFeedGet(), now: Date.now, timer: realSelfUpdateTimer, confirm: (o) => nativeConfirm(win, o), changed: (v) => toRenderer('selfupdate:changed', v), openExternal: (url) => shell.openExternal(url) });
+  wireSelfUpdateResume(powerMonitor, () => selfUpdater); // spec 118 FR-462 (review of PR 2073): a wake from sleep looks again, so a clock jump past 24 h does not wait
   /* Dev/test theme seed (spec 036 FR-005): DURBAR_THEME=<id> makes the office open on that theme for the per-theme checks; invalid ids fall back in the renderer. */
   if (dev.DURBAR_THEME) runTheme = parseThemeId(dev.DURBAR_THEME);
   mcpStore = new McpStore(path.join(app.getPath('userData'), 'durbar-mcp.json'), safeStorageCodec);

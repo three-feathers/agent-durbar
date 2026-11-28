@@ -30,9 +30,8 @@ Everything here is a template. It holds no secrets, no chat or account IDs, no e
 
 Agreed in the team chat on 2026-10-22 (spec 021, FR-038). The coordinator picks the path by the size of the change.
 
-- **Small** (a doc, a spec line, CSS, wording, one file, no security impact): the `implementer` alone, on a smaller model. It writes the spec delta, self-reviews, reads CI for the sha and posts `checks run at <sha>`. The other team's review is the review; no internal reviewer.
-- **Medium**: one `implementer` that mutation-checks its own fix, then the `reviewer` only for the risks named for that change.
-- **Large or sensitive** (secrets, permissions, spending, writing user files, new IPC, redaction, security fixes): the full `analyst` → `implementer` → `reviewer`, on the top model.
+- **Light** (`scripts/review-profile.js` says light): one `implementer`. It writes the spec delta, self-reviews (the diff read against the checklist), reads CI for the sha and posts `checks run at <sha>`; no mutants or fuzz asked. The other team's review is the review; no internal reviewer.
+- **Heavy** (everything `review-profile.js` does not call light, spec 117 FR-020: masking, IPC, secrets, permissions, writing user files, spending, security fixes): the full `analyst` → `implementer` → `reviewer`, on the top model, with mutants and fuzz.
 - The `analyst` only when there are real decisions to make. A clear bug goes straight to the implementer.
 - At most two heavy agents at a time on one machine. The same implementer keeps a PR through all its fix rounds.
 - Briefs are short and concrete: the risks to check, "read CI for the sha", mutations and probes only, and for an open PR "run `npm run pr:preflight -- <N>` before asking for review; fix every FAIL" (spec 021 FR-384).

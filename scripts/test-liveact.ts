@@ -666,7 +666,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   const card = app.slice(app.indexOf('function showPerm('), app.indexOf('function roAskHint('));
   ok(/ps\.textContent=sumS\.text/.test(card) && !/ps\.textContent=p\.summary/.test(card), 'card text');
   ok(/announce\(\[a\.name,' needs your OK: ',look,look\?' The request: ':'',sumS\.text,/.test(card), 'screen-reader announcement shows the masked summary (after the lookalike line, spec 003 FR-118)');
-  ok(/const keyS=p\.scopeKey\?shownPerm\(grantText\(p\.scopeKey,p\.scopeLabel\),String\(p\.scopeKey\)\):null/.test(card) && /expertScopeLabel\(gt\)/.test(card) && /cutText\(gt,window\.DurbarLookalike&&typeof window\.DurbarLookalike\.tipLen==='function'\?window\.DurbarLookalike\.tipLen\(gt\):240\)/.test(card), 'session button and its tooltip: the raw key through the one mask (spec 003 FR-118)');
+  ok(/const pc=permCardOf\(p\), sumS=pc\.sum, scopeS=pc\.scope, broadS=pc\.broad/.test(card) && /const keyS=pc\.key;/.test(card) && /const permCardOf=p=>\{if\(window\.DurbarLiveAct&&window\.DurbarLiveAct\.permCard\)return window\.DurbarLiveAct\.permCard\(p,LIVE_MASK\|\|\{\}\)/.test(app) && /const key=q\.scopeKey\?permText\(grantText\(q\.scopeKey,q\.scopeLabel\),permKind\(String\(q\.scopeKey\)\),mask\):null/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js'), 'utf8')) && /expertScopeLabel\(gt\)/.test(card) && /cutText\(gt,window\.DurbarLookalike&&typeof window\.DurbarLookalike\.tipLen==='function'\?window\.DurbarLookalike\.tipLen\(gt\):240\)/.test(card), 'session button and its tooltip: the raw key through the one mask (spec 003 FR-118)');
   ok(/cutText\(broadS\.text,18\)/.test(card), 'any-arguments tooltip');
   // follow-up of the pre-review of PR 1317 (spec 012 FR-176): the "any arguments" scope label is built by the adapter from the command's first word, unmasked (the grant key needs it raw);
   // the page shows it only through `permText` (`broadS`, its tooltip and the scope hint), so a token-shaped first word is hidden there. Values are made up at run time.
@@ -684,7 +684,7 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
     // a first word that is a secret NAME with a value (`TOKEN=<value> cmd`) is no any-arguments scope at all
     ok(grantScope({ kind: 'shell', fullCommandText: 'TOKEN=' + body.slice(0, 12) + ' npm test' }).broad === undefined, 'no any-arguments scope for an environment assignment first word');
     // the page builds the label's shown form with the one permission mask and uses it for the tooltip and the hint
-    ok(/broadS=shownPerm\(p\.broadScopeLabel\|\|p\.kind,p\.kind\)/.test(app), 'the page masks the any-arguments label with shownPerm');
+    ok(/broad=permText\(q\.broadScopeLabel\|\|q\.kind,k,mask\)/.test(fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'renderer', 'liveact.js'), 'utf8')) && /broadS=pc\.broad/.test(app), 'the page masks the any-arguments label through permCard (the one permText)');
   }
   ok(/scopeHint\(Object\.assign\(\{\},p,\{scopeLabel:p\.scopeLabel\?scopeS\.text:p\.scopeLabel,broadScopeLabel:p\.broadScopeLabel\?broadS\.text:p\.broadScopeLabel\}\)\)/.test(card), 'the scope hint');
   ok(/const hwhy=permWhy\(sumS,scopeS,broadS,keyS\)/.test(card) && /if\(p\.state==='pending'&&hwhy\)\{const hp=/.test(card) && /PERM_WHY\[hwhy\]\+hgrant/.test(card), 'review 4: the hidden-part line shows on every pending card with a hidden part, with or without a scope key');

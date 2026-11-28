@@ -96,6 +96,7 @@ export const SIM_OPTIONAL_MEMBERS: Readonly<Record<string, ((c: Caps) => boolean
   generateImage: (c: Caps) => !!c.imageGen, // spec 096 FR-001
   setRemote: (c: Caps) => !!c.remote,
   setAutopilot: (c: Caps) => !!c.autopilot, // spec 099 FR-001
+  setAssisted: (c: Caps) => !!c.assistedApproval, // spec 003 FR-121
   renameSession: (c: Caps) => !!c.renameSession,
   accountQuota: (c: Caps) => !!c.accountQuota, // spec 011 FR-090
   deleteSession: (c: Caps) => !!c.deleteSession,

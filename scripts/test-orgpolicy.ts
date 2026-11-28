@@ -17,7 +17,7 @@ import { hostMatches, parseCodexOrgPolicy, readCodexOrgPolicy, tomlStatements } 
 import { nodeOrgFs } from '../src/adapters/orgpolicyfiles';
 import type { OrgFs } from '../src/adapters/orgpolicyfiles';
 import { FakeAdapter } from '../src/adapters/fake';
-import { boundOrgPolicy, emptyOrgPolicy, ORG_LIMITS, orgVerdictStats, globMatch, mcpVerdict, modelVerdict, modeVerdict, orgBlockedText, orgDoubtText, orgFatalText, orgPolicyView, ownValue, toolVerdict, urlMatches } from '../src/shared/orgpolicy';
+import { assistedVerdict, boundOrgPolicy, emptyOrgPolicy, ORG_LIMITS, orgVerdictStats, globMatch, mcpVerdict, modelVerdict, modeVerdict, orgBlockedText, orgDoubtText, orgFatalText, orgPolicyView, ownValue, toolVerdict, urlMatches } from '../src/shared/orgpolicy';
 import type { OrgPolicy, OrgVerdict } from '../src/shared/orgpolicy';
 import { orgGuardedStart, OrgPolicyCache, ORG_POLICY_TTL_MS } from '../src/main/orgpolicy';
 import { setMcpOp, setModeOp, startGuardOp, startModeOf } from '../src/main/agentops';
@@ -626,6 +626,44 @@ async function main(): Promise<void> {
     assert.ok(bd.problems.some((x) => x.includes('deniedModels is longer than Agent Durbar reads')), 'i: the same for a deny-list');
   }
 
+  // spec 003 FR-127 (T053): Copilot's assisted approvals turned off by policy: from the raw `permissions` layer (no resolved flag), and the file
+  {
+    const R = (resolved: Record<string, unknown>, extra: Record<string, unknown> = {}) => copilotOrgPolicyFromResolve({ resolved: { bypassPermissionsDisabled: false, managedKeys: [], ...resolved }, ...extra })!;
+    const line = "Your organization turned off Copilot's assisted approvals";
+    assert.strictEqual(R({}).assisted, undefined, 'T053: nothing set: no word');
+    assert.strictEqual(assistedVerdict(R({})), undefined);
+    for (const [where, p] of [
+      ['merged settings', R({ settings: { permissions: { disableAssistedPermissionsMode: true } } })],
+      ['permissions context', R({ permissionsContext: { failClosed: false, permissions: { disableAssistedPermissionsMode: true } } })],
+      ['a channel layer', R({}, { layers: [{ source: 'device' }, { source: 'server', settings: { permissions: { disableAssistedPermissionsMode: true } } }] })],
+    ] as const) {
+      assert.strictEqual(p.assisted, 'blocked', `T053: ${where} blocks it`);
+      assert.ok(p.found, `T053: ${where}: a policy applies`);
+      assert.deepStrictEqual(assistedVerdict(p), { why: line, refuse: true });
+      assert.deepStrictEqual(orgPolicyView(p).assisted, { why: line, refuse: true }, 'T053: the window\'s view carries it');
+      assert.strictEqual(p.modes.allow, undefined, 'T053: Allow all is not touched by it');
+    }
+    for (const v of [false, 'true', 1, null]) assert.strictEqual(R({ settings: { permissions: { disableAssistedPermissionsMode: v } } }).assisted, undefined, `T053: only true blocks (${JSON.stringify(v)})`);
+    assert.strictEqual(R({ settings: { permissions: Object.create({ disableAssistedPermissionsMode: true }) } }).assisted, undefined, 'T053: own properties only');
+    assert.strictEqual(R({ failClosed: true }).assisted, 'doubt', 'T053: a fail-closed policy is doubt (advice), never silent');
+    assert.strictEqual(assistedVerdict(R({ failClosed: true }))?.refuse, false);
+    // the machine file (fallback reader)
+    assert.strictEqual(copilot({ permissions: { disableAssistedPermissionsMode: true } }).assisted, 'blocked', 'T053: the file blocks it');
+    assert.strictEqual(copilot({ permissions: { disableAssistedPermissionsMode: { overridable: true } } }).assisted, 'doubt', 'T053: an overridable value is doubt');
+    assert.strictEqual(copilot({ permissions: { disableAssistedPermissionsMode: false } }).assisted, undefined);
+    assert.strictEqual(copilot({ permissions: { disableAssistedPermissionsMode: 'yes' } }).assisted, 'doubt', 'T053: a value it cannot read is doubt');
+    assert.strictEqual(copilot({ permissions: 'x' }).assisted, 'doubt', 'T053: an unreadable permissions block is doubt');
+    assert.strictEqual(copilot({}).assisted, undefined);
+    // main's refusal (`orgAssistedRefusal` = refusalNow with { assisted: true }), and Allow all's refusal is not changed by it
+    const cache = new OrgPolicyCache({ ids: () => ['copilot'], adapter: () => ({ displayName: 'Copilot', readOrgPolicy: () => R({ settings: { permissions: { disableAssistedPermissionsMode: true } } }) }) });
+    await cache.fresh('copilot');
+    assert.strictEqual(cache.refusalNow('copilot', { assisted: true }), "Your organization turned off Copilot's assisted approvals. This session stays in Ask first.", 'T053: refused with the fixed line');
+    assert.strictEqual(cache.refusalNow('copilot', { mode: 'ask' }), undefined, 'T053: Ask first itself is not refused');
+    assert.strictEqual(cache.refusalNow('copilot', { mode: 'allow' }), undefined);
+    const doubt = new OrgPolicyCache({ ids: () => ['copilot'], adapter: () => ({ displayName: 'Copilot', readOrgPolicy: () => R({ failClosed: true }) }) });
+    await doubt.fresh('copilot');
+    assert.strictEqual(doubt.refusalNow('copilot', { assisted: true }), undefined, 'T053: doubt is advice, not a refusal (as for Allow all)');
+  }
   done = true;
   console.log('test-orgpolicy: PASS');
 }

@@ -67,3 +67,7 @@ Backlog: capability flag (spec 012). (Office and per-folder totals: done 2026-10
 ## 2026-11-10: a monthly reset that does not move with the minute (FR-092)
 
 - [x] T073 `sim.ts` `simQuotaFixture`: the request modes' and `usagebilled`'s `resetsAt` is the next UTC midnight 12 days on (`MONTHLY`), so the theme-geometry Photo/Retro Settings comparison cannot see "06:10" against "06:11" (merge-queue run 42766660661).
+
+## 2026-11-25: three settings-store places get the checks the review of PR 2064 found (FR-012, issue #2066)
+
+- [x] T587 (FR-012) `src/main/settings.ts`: `mcpWarnLevels` (getter and `setMcpWarnLevels`'s answer) is a copy; `setAutopilotLimit` goes through `commit` (a failed write restores the previous limit) and returns a boolean; `setCharacterPin` checks the key (`isFolderKey`) and the id (`CHARACTER_ID_RE`) before the merge. `scripts/test-settings-store.ts` (`test:settings-store`, in `test-suites.txt`, six mutants); changelog fragment.

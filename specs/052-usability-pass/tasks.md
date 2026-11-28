@@ -497,3 +497,12 @@
 
 ## 2026-11-23: the activity log shows full paths (issue #2060 item 11)
 - [x] T487 (delta 2026-11-23, tracking issue #2060 item 11) specs 052, 060, 081: the owner decision; `src/shared/activity.ts` (`path` field, `redact`), `src/main/main.ts` (`logActivity`), `src/renderer/cuttext.js` (`midCut`), `src/renderer/activitytable.js`, `src/adapters/detect.ts` (`displayWhere`), `src/renderer/sim.ts`, tests `test-activity`, `test-updatecheck`, `test-cuttext`, `check-activity-table`, `shots-051-setup` [FR-071, FR-042]
+
+## 2026-11-25: check-answer-safety waits for the limit step's labels (issue #1770)
+- [x] T594 (delta 2026-11-25, issue #1770) `scripts/check-answer-safety.js` FR-210 (B): the step waits up to 5 s for the bar's labels to equal `['Show in chat']` before its one assert, and the diagnostic gains the bar's own change log (the page records every hidden-flag and child change with a timestamp); mutants `latepaint` (passes) and `latepaint-blind` (dies at `only "Show in chat" []`). Test driver only. Refs #1770 (cause unproven)
+
+## 2026-11-25: a wide dialog fits a 320 px page (issue #2115)
+- [x] T592 (delta 2026-11-25, issue #2115) spec 052: the decision (a dialog always fits; the page behind is a known gap), FR-471; `src/renderer/styles.css` (`.dlg .dbtn` wraps; `.dlg.l .dbtn` removed), `src/renderer/screens.css` (`.dlg fieldset`, `.mcp-rsess .btn`, `#hsDlg .dbtn` removed), `scripts/check-052-zoom-dialogs.js` + `scripts/ui-suite.js`, changelog fragment [FR-471] Second delta 2026-11-25 (PR 2139 CI red): `screens.css` (`overflow-wrap` on the radio labels, `.srv-sign`, `.srv-sgact .btn`), `check-052-zoom-dialogs.js` (wide-font case, font-independent footer row assert).
+
+## 2026-11-25: the other wide dialogs at 320 px (issue #2140 part 1)
+- [x] T599 (delta 2026-11-25 third, issue #2140 part 1) spec 052 FR-471: `scripts/check-052-zoom-dialogs.js` opens the folder setup, Import from VS Code, Trust and global-file review dialogs at 640x700 zoom 2 in both fonts with the same five asserts, plus a list guard; `src/renderer/screens.css` `.mtag` (`max-width:100%;min-width:0;overflow-wrap:anywhere`, the folder setup's file tag stuck out in a wide font); changelog fragment. Part 2 (the page behind a dialog) stays open for the owner

@@ -42,6 +42,7 @@ const DOC_SHOTS = [
   { name: 'shots-005-cardmenu', files: ['005-card-menu-stop-end-1440x900.png'] },
   { name: 'check-ro-ask', files: ['003-ro-ask-menu-1440x900.png'] },
   { name: 'check-why-allowed', files: ['003-why-allowed-1440x900.png'] },
+  { name: 'check-003-assisted', files: ['003-assisted-menu-1440x900.png'] }, // spec 003 T054: Copilot's reviewer switch in Ask first's mode menu; its 1280x800 twin and the chip pictures are linked from the spec and retaken with it (as FR-118's)
   { name: 'check-sandbox-floor', files: ['087-sandbox-note-1440x900.png'] }, // spec 087: the OS sandbox note and the chip
   { name: 'check-composer-toolbar', files: ['005-composer-expert-light-1440x900.png', '005-composer-ctxsummary-1440x900.png', '005-composer-ctxsummary-1280x800.png'] },
   { name: 'check-edits', files: ['005-edit-expert-1440x900.png'] },
@@ -65,6 +66,7 @@ const DOC_SHOTS = [
   { name: 'shots-051-setup', files: ['051-harnesses-1440x900.png'] },
   { label: 'shots-051-setup win32', name: 'shots-051-setup', files: ['051-install-manual-win32-1440x900.png'] },
   { name: 'shots-081-updates', files: ['081-updates-avail-1440x900.png'] },
+  { name: 'check-selfupdate-dialog', files: ['118-update-toast-1440x900.png', '118-update-breaking-1440x900.png', '118-update-dialog-1280x800.png', '118-update-about-1280x800.png'] }, // spec 118 T015: Durbar's own update toast, menu line, dialogs and About block
   { name: 'shots-052-ux', files: ['052-office-1440x900.png'] },
   { name: 'check-settings-nav', files: ['052-settings-nav-1440x900.png'] }, // spec 052 FR-226: the Settings section list (the 1280x800 twin is not linked: the site's 8 MB budget)
   { name: 'check-auto-follow', files: ['052-auto-follow-queue-1440x900.png', '052-auto-follow-queue-1280x800.png'] },

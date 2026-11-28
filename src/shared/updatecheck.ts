@@ -425,9 +425,16 @@ export type Announced = Partial<Record<SetupKind, string>>;
 /** One toast per app and version, saved across restarts. No toast when the card is the announcement (Settings is open); the version still counts. */
 export function announceRule(r: CheckResult, announced: Announced, settingsVisible: boolean): { toast: boolean; save?: string } {
   if (r.state !== 'update-available' || !r.latest || r.newerOnLatest) return { toast: false };
-  const before = announced[r.app];
-  if (before !== undefined && compareVersions(r.latest, before) <= 0) return { toast: false };
-  return { toast: !settingsVisible, save: r.latest };
+  return announceOnce(r.latest, announced[r.app], settingsVisible);
+}
+
+/**
+ * The version rule of `announceRule`, shared with Durbar's own update check (spec 118 FR-463, T014): a version newer than the one announced
+ * before is saved; it is toasted unless the card that says it is on screen (then the card is the announcement).
+ */
+export function announceOnce(latest: string, before: string | undefined, cardOnScreen: boolean): { toast: boolean; save?: string } {
+  if (before !== undefined && compareVersions(latest, before) <= 0) return { toast: false };
+  return { toast: !cardOnScreen, save: latest };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

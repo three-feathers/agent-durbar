@@ -58,7 +58,8 @@ const eq = <T>(a: T, b: T, m: string): void => { n++; assert.deepStrictEqual(a, 
 const ok = (c: unknown, m: string): void => { n++; assert.ok(c, m); };
 
 const base = tmpDir('durbar-memroots-');
-const real = (p: string): string => fs.realpathSync(p);
+// the NATIVE real path, as main and Codex's roots use it: on Windows the JS `realpathSync` keeps a short 8.3 name (RUNNER~1) that never matches a native root (F5)
+const real = (p: string): string => fs.realpathSync.native(p);
 const proj = real((fs.mkdirSync(path.join(base, 'proj')), path.join(base, 'proj')));
 const mem = real((fs.mkdirSync(path.join(base, 'mem')), path.join(base, 'mem')));
 const memSibling = real((fs.mkdirSync(path.join(base, 'mem-other')), path.join(base, 'mem-other')));
@@ -293,6 +294,12 @@ section('claude', async () => {
   ok(JSON.stringify(await hook('Write', { file_path: IN })).includes('deny'), 'claude hook, Read-only: a write inside the memory folder is denied');
   ok(JSON.stringify(await hook('Edit', { file_path: NEW_IN })).includes('deny'), 'claude hook, Read-only: an edit there is denied');
   if (linkOk) ok(JSON.stringify(await hook('Read', { file_path: VIA_LINK })).includes('deny'), 'claude hook, Read-only: a read through a link out of the folder is denied');
+  // F3: a RELATIVE entry is no root: not in the session's list, and a read there is denied by the hook
+  const rel = claudeTarget();
+  const rsid = await rel.start('read-only', ['relative/dir']);
+  eq(rel.session(rsid).readRoots, [], 'F3 claude: a relative readOnlyFolders entry gives no read root');
+  const relHook = (f: string) => (rel.ad as unknown as { hookDecision(s: unknown, tool: string, i: unknown, id: string): Promise<Record<string, unknown>> }).hookDecision(rel.session(rsid), 'Read', { file_path: f }, 'u');
+  ok(JSON.stringify(await relHook(path.resolve('relative/dir/x'))).includes('deny'), 'F3 claude hook: a read under the relative entry (resolved) is denied');
   const roots = [proj];
   eq(decideTool('read-only', 'Read', { file_path: IN }, roots, undefined, [mem]).behavior, 'allow', 'decideTool read-only: read inside');
   eq(decideTool('ask', 'Read', { file_path: IN }, roots, undefined, [mem]).behavior, 'allow', 'decideTool ask: read inside');
@@ -353,16 +360,18 @@ section('off', async () => {
   const store = { folder: undefined as string | undefined, on: false, keep: false, get memoryFolder() { return this.folder; }, get memoryOn() { return this.on && this.folder !== undefined; }, get memoryKeepInGit() { return this.keep; }, setMemory: () => true, setMemoryOn: () => true };
   const links: Record<string, string> = {};
   const missing: string[] = [];
+  let ctxThrows = false;
+  let checkThrows = false;
   const mk = (office: string[] = []): MemoryOps => new MemoryOps({
     store: () => store as never,
     pick: async () => null,
     flavor: { path: path.posix, platform: 'linux' }, // invented POSIX paths: pure logic, the same on every OS
-    ctx: () => ({
+    ctx: () => (ctxThrows ? (() => { throw new Error('ctx broke'); })() : {
       home: path.posix.join(VB, 'home'), userData: path.posix.join(VB, 'userdata'), env: {}, agentHomes: [path.posix.join(VB, 'agenthome')],
       realpath: (p: string) => { if (missing.includes(p)) throw new Error('ENOENT'); return links[p] ?? p; },
       lstat: (p: string) => { if (missing.includes(p)) throw new Error('ENOENT'); return { isDirectory: () => true }; },
     } as never),
-    officeFolders: () => office,
+    officeFolders: () => { if (checkThrows) throw new Error('a plain error, not a workspace file one'); return office; },
   });
   const ops = mk();
   eq(ops.readRoots(), [], 'no folder stored: nothing');
@@ -383,6 +392,18 @@ section('off', async () => {
   eq(ops.readRoots(), [], 'a stored folder now inside an agent home (ctx.agentHomes, as pick and apply see it): nothing');
   store.folder = vMem;
   eq(ops.readRoots(), [vMem], 'the same ctx still accepts a fine folder');
+  // F2: any throw while re-checking gives none, never the stored path
+  ctxThrows = true;
+  eq(ops.readRoots(), [], 'F2: the ctx throws: no read root, not the stored path');
+  ctxThrows = false; checkThrows = true;
+  eq(ops.readRoots(), [], 'F2: the office list throws something else: no read root');
+  checkThrows = false;
+  // F1: the session being started is not in the office yet; the caller names its folders
+  eq(ops.readRoots([VB + '/work']), [vMem], 'F1: a starting folder elsewhere gets the memory folder');
+  eq(ops.readRoots([VB]), [], 'F1: a starting folder that HOLDS the memory folder gets none');
+  eq(ops.readRoots([vMem + '/sub']), [], 'F1: a starting folder INSIDE the memory folder gets none');
+  eq(ops.readRoots([vMem]), [], 'F1: a starting folder that IS the memory folder gets none');
+  eq(ops.readRoots([]), [vMem], 'F1: no starting folder named: as before');
   store.folder = 'relative/path';
   eq(ops.readRoots(), [], 'a stored relative path: nothing');
 });
@@ -406,7 +427,7 @@ section('sources', async () => {
   const claude = rd('src/adapters/claude.ts');
   ok(!/addDirs[^\n]*(readRoots|readOnlyFolders)/.test(claude), 'claude.ts never mixes the read list into addDirs');
   const main = rd('src/main/main.ts');
-  ok(/startOptionsOf\([^\n]*readRoots\(\)/.test(main), 'main fills readOnlyFolders from the memory ops');
+  ok(/startOptionsOf\([^\n]*readRoots\(startingFolders\(a\)\)/.test(main), 'main fills readOnlyFolders from the memory ops, naming the folders of the session being started (F1)');
 });
 
 (async () => {
@@ -427,6 +448,9 @@ section('sources', async () => {
     M('src/main/memoryops.js', 'roots are given while the memory is off', '|| !st.memoryOn)\n            return [];', ')\n            return [];', 'off'),
     // M1: a memory root that also allows writes (a write path of any adapter's shape inside it is approved)
     M('src/adapters/permissions.js', 'M1: a memory root also allows writes', '        const scope = grantScope(req, this.opts.pathCheck?.flavor);', "        if (this.memoryRoots.some((r) => [req.fileName, req.path, ...(req.paths ?? [])].some((q) => typeof q === 'string' && q.startsWith(r))))\n            return this.approveWrite(req);\n        const scope = grantScope(req, this.opts.pathCheck?.flavor);", 'claude'),
+    M('src/main/memoryops.js', 'F1: extraOffice is ignored', 'officeFolders: [...office, ...extraOffice]', 'officeFolders: office', 'off'),
+    M('src/main/memoryops.js', 'F2: a throw while re-checking gives the stored path', 'catch {\n            return [];\n        }\n    }\n    /** Main', 'catch {\n            return [folder];\n        }\n    }\n    /** Main', 'off'),
+    M('src/adapters/claude.js', 'F3: the read list is the raw readOnlyFolders', 'readRoots: broker.memoryReadRoots(),', 'readRoots: options.readOnlyFolders ?? [],', 'claude'),
     // Copilot, T005 R1
     M('src/adapters/copilot.js', 'Copilot additionalDirectories is set to the folder', 'workingDirectory: cwd,', 'workingDirectory: cwd, additionalDirectories: options.readOnlyFolders,', 'copilot'),
     // the other sides of the same rules
@@ -449,6 +473,7 @@ section('sources', async () => {
     assert.notStrictEqual(r.status, 0, 'mutant NOT killed: ' + m.name);
     const died = [...r.stderr.matchAll(/SECTION (\w+) FAILED/g)].map((x) => x[1]);
     assert.ok(died.includes(m.section), `mutant "${m.name}" must die in section "${m.section}", it died in: ${died.join(',') || r.stderr.slice(0, 200)}`);
+    if (/^F\d:/.test(m.name)) assert.ok(r.stderr.includes(m.name.slice(0, 2)), `mutant "${m.name}" must die at its own named assert (${m.name.slice(0, 2)}...), stderr: ${r.stderr.slice(0, 200)}`);
     killed++;
   }
   assert.strictEqual(killed, mutants.length);

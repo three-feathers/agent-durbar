@@ -55,6 +55,8 @@
     <div class="top-more">
       <button class="btn" id="topMoreBtn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="topMoreMenu" aria-label="More: folders, shortcuts and the demo" title="More: folders, shortcuts and the demo">⋯</button>
       <div class="more-menu" id="topMoreMenu" role="menu" aria-label="More" hidden>
+        <!-- spec 118 FR-464: only while a Durbar update exists that is neither snoozed nor skipped (selfupdatecard.js fills the version with textContent) -->
+        <button class="more-it" role="menuitem" tabindex="-1" id="selfUpdItem" type="button" title="What is new in the next version of Agent Durbar" hidden><span class="mt"><span id="selfUpdWord">Update available</span><small>See what is new in Agent Durbar</small></span></button>
         <button class="more-it" role="menuitem" tabindex="-1" id="kbdHelpBtn" type="button" data-keys-text title="Every keyboard shortcut (?)"><span class="mt">Keyboard shortcuts<small>Ctrl+K palette, I inbox, N next (?)</small></span></button>
         <!-- spec 064 FR-001: one message to several running sessions (a dialog; nothing is sent until you pick sessions) -->
         <button class="more-it" role="menuitem" tabindex="-1" id="sendSeveralBtn" type="button" title="Send one message to the running sessions you pick" hidden><span class="mt">Send to several sessions…<small>One message, several sessions</small></span></button>
@@ -188,6 +190,7 @@
 <script src="memory.js"></script><!-- spec 116 T007: Settings > Office memory (window.DurbarMemory) -->
 <script src="teams.js"></script><!-- spec 111 T008: Settings > Team templates (window.DurbarTeams) -->
 <script src="charmaker.js"></script><!-- spec 096: the character maker (window.DurbarCharMaker), read at call time by screens.js -->
+<script src="selfupdatecard.js"></script><!-- spec 118 T014: Durbar's own update block, menu line and dialog (window.DurbarSelfUpdate), read at call time by screens.js and app.js -->
 <script src="screens.js"></script>
 <script src="foldersetup.js"></script>
 <script src="demo.js"></script>

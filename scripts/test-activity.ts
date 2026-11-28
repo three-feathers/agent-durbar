@@ -156,6 +156,8 @@ try {
     assert.strictEqual(decisionOf({ state: 'approved', via: 'user', remembered: true }), 'allowed-session');
     assert.strictEqual(decisionOf({ state: 'denied', via: 'user' }), 'denied');
     assert.strictEqual(decisionOf({ state: 'approved', via: 'session' }), 'auto-session-grant');
+    assert.strictEqual(decisionOf({ state: 'approved', via: 'app-review' }), 'auto-app-review', 'spec 003 FR-124: one row for a judge-approved call');
+    assert.strictEqual(decisionOf({ state: 'approved', via: 'quiet' }), undefined, 'spec 003 FR-125: the app\'s own `permission.completed` tag for the same call adds no second row');
     assert.strictEqual(decisionOf({ state: 'approved', via: 'policy' }), 'auto-allow-all');
     assert.strictEqual(decisionOf({ state: 'denied', via: 'stopped' }), undefined, 'a stopped session is not a decision');
     assert.strictEqual(decisionOf({ state: 'denied' }), undefined, 'a Read-only denial is not logged');
@@ -270,7 +272,7 @@ try {
       assert.ok(h2.includes(`title="${long}" aria-label="${long}">/home/ana/clients/a`) && h2.includes('…') && h2.includes('/deep/app</td>'), 'a long path is cut in the middle, the whole path stays in the title');
       assert.ok(cell({ folder: 'app' }).includes('title="app" aria-label="app">app</td>'), 'an older row (no path) shows its base name');
     }
-    assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted', 'MCP restart', 'Loop started', 'Loop pass', 'Loop pass skipped', 'Loop on hold', 'Loop ended', 'Autopilot on', 'Autopilot ended', 'Autopilot off']);
+    assert.deepStrictEqual(Object.values(T.DECISION_WORDS), ['Allowed once by you', 'Allowed for the session', 'Denied', 'Automatic (Allow all)', 'Automatic (session permission)', 'Automatic (agent app reviewer)', 'Mode changed', 'Limit changed', 'Remote control on', 'Remote control off', 'Session deleted', 'MCP restart', 'Loop started', 'Loop pass', 'Loop pass skipped', 'Loop on hold', 'Loop ended', 'Autopilot on', 'Autopilot ended', 'Autopilot off']);
     assert.deepStrictEqual(Object.keys(T.DECISION_WORDS), [...ACTIVITY_DECISIONS], 'one plain word per decision, in the same order');
 
     // spec 072 FR-024 (T008): the loop rows main records, through the store: kept, redacted, never the prompt or the reply

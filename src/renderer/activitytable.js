@@ -10,6 +10,7 @@
     'denied':'Denied',
     'auto-allow-all':'Automatic (Allow all)',
     'auto-session-grant':'Automatic (session permission)',
+    'auto-app-review':'Automatic (agent app reviewer)',
     'mode-change':'Mode changed',
     'limit-change':'Limit changed',
     'remote-on':'Remote control on','remote-off':'Remote control off',

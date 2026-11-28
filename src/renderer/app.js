@@ -1101,11 +1101,9 @@ const PERM_GRANT=' Allow for this session covers exactly what was asked, the hid
 const permWhy=(...xs)=>{const w=xs.filter(x=>x&&x.hidden).map(x=>x.why||'secret');return w.includes('cut')?'cut':w.includes('unchecked')?'unchecked':w.includes('concealed')?'concealed':w.includes('secret')?'secret':w.length?'control':'';};
 const permBlind=w=>w==='unchecked'||w==='concealed'||w==='cut'; /* neutral words only: no Allow, Deny stays */
 /* spec 003 FR-118 (issue 1300): what a session grant covers, from its raw key, not the 28-character label: the exact command, the host as the network reads it, server/tool (the label when it says the same) */
-const grantText=(key,label)=>{const k=String(key||''),l=String(label||'');let m;
-  if((m=/^shell-exact:([\s\S]+)$/.exec(k)))return 'run '+m[1];
-  if((m=/^url:([\s\S]+)$/.exec(k)))return 'fetch '+m[1];
-  if((m=/^mcp:([\s\S]+)$/.exec(k)))return l&&l.replace(' \u203a ','/')===m[1]?l:m[1];
-  return l;};
+const grantText=(key,label)=>window.DurbarLiveAct&&window.DurbarLiveAct.grantText?window.DurbarLiveAct.grantText(key,label):String(label||''); /* one copy, in liveact.js (spec 003 FR-124 shares it with the adapters' review gate) */
+/* spec 003 FR-118, FR-124: a card's words through the one helper the adapters' review gate also reads (liveact.js permCard); no module: every part unchecked */
+const permCardOf=p=>{if(window.DurbarLiveAct&&window.DurbarLiveAct.permCard)return window.DurbarLiveAct.permCard(p,LIVE_MASK||{});const u={text:'request',hidden:true,why:'unchecked'};return {sum:u,scope:u,broad:u,key:p&&p.scopeKey?u:null};};
 /* spec 003 FR-117..FR-119: lookalike letters. hasLook: a shownPerm result with a finding (shown or in a hidden part); lookLine: the card's one plain line for some of them, or '' */
 const hasLook=x=>!!(x&&x.look&&(x.look.n>0||x.look.inHidden));
 const LOOK_UNCHECKED='Durbar could not check this request for lookalike letters.';
@@ -2655,18 +2653,22 @@ const CHIPS_SHOWN=6;
    events' times) and up to OUT_SHOWN characters of output in a scrollable block, with "Show all" for the rest. The closed line stays one line. */
 const OUT_SHOWN=20000, OUT_KEEP=1000000;
 const fmtDur=ms=>ms<1000?Math.round(ms)+' ms':ms<60000?(ms/1000).toFixed(1)+' s':Math.floor(ms/60000)+' min '+Math.round(ms%60000/1000)+' s';
-function makeChip({tool,kind,label,res,state,output,full,ms}){
+/* spec 005 FR-438: the note after the line: how many characters of the masked argument the line leaves out (the chip itself opens the rest, in
+   its open command box), or, for an argument main sent empty, its length; text only, never a second button inside the chip's button */
+const chipNote=(more,long,cmd,cut)=>long>0?'Arguments too long to show ('+long.toLocaleString('en-US')+' characters)':(more>0||cut>0)&&cmd?more.toLocaleString('en-US')+' more character'+(more===1?'':'s')+(cut>0?' ('+cut.toLocaleString('en-US')+' not shown)':''):'';
+function makeChip({tool,kind,label,res,state,output,full,ms,more:argMore,long:argLong,cut:argCut}){
   const k=kind||toolKind(tool), name=TOOLNAME[tool]||shownTool(tool);
   const el=document.createElement('div');
   el.className='chip'+(state==='failed'||state==='fail'?' fail':state==='run'?' run':'');
   el.setAttribute('role','button');el.tabIndex=0;el.setAttribute('aria-expanded','false');
-  el.title=name+': '+label+(res?' ('+res+')':'');
   const out=output==null?'':String(output).slice(0,OUT_KEEP), detail=out&&out!==res?out:'', cmd=full&&String(full).trim()?String(full):'';
+  const cutN=cmd&&Number(argCut)>0?Number(argCut):0, note=chipNote(Number(argMore)||0,label?0:Number(argLong)||0,cmd,cutN);
+  el.title=name+': '+label+(label&&note?' \u2026 ('+note+')':note)+(res?' ('+res+')':'');
   const dur=typeof ms==='number'&&Number.isFinite(ms)&&ms>0?fmtDur(ms):'';
   if(detail)el.classList.add('has-detail');
   if(cmd)el.classList.add('has-cmd');
   const more=detail.length>OUT_SHOWN;
-  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}${cmd||dur||detail?`<span class="xbody">${cmd?`<span class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button type="button" class="cp-btn cp-cmd" aria-label="Copy the command" title="Copy the command">Copy</button></span>`:''}${dur||(state==='failed'&&res)?`<span class="xmeta">${state==='failed'?'Failed':'Done'}${dur?' · took '+esc(dur):''}</span>`:''}${detail?`<pre class="detail">${esc(more?detail.slice(0,OUT_SHOWN):detail)}</pre>${more?`<button type="button" class="xall">Show all (${detail.length.toLocaleString('en-US')} characters)</button>`:''}`:''}</span>`:''}`;
+  el.innerHTML=`${ICON(k)||ICON('tool')}<b>${esc(name)}</b><code>${esc(label)}</code>${note?`<span class="argmore">${esc(note)}</span>`:''}${res?`<span class="res">${el.className.includes('fail')?'Failed: ':''}${esc(res)}</span>`:''}${cmd||dur||detail?`<span class="xbody">${cmd?`<span class="cmdbox"><pre class="cmd">${esc(cmd)}</pre><button type="button" class="cp-btn cp-cmd" aria-label="Copy the command" title="Copy the command">Copy</button></span>${cutN?`<span class="xmeta argcut">${esc(cutN.toLocaleString('en-US'))} more character${cutN===1?'':'s'} not shown.</span>`:''}`:''}${dur||(state==='failed'&&res)?`<span class="xmeta">${state==='failed'?'Failed':'Done'}${dur?' · took '+esc(dur):''}</span>`:''}${detail?`<pre class="detail">${esc(more?detail.slice(0,OUT_SHOWN):detail)}</pre>${more?`<button type="button" class="xall">Show all (${detail.length.toLocaleString('en-US')} characters)</button>`:''}`:''}</span>`:''}`;
   if(more)el._out=detail;
   return el;
 }
@@ -6022,8 +6024,9 @@ function liveChat(a){
 }
 function addNote(chat,html,err){const n=document.createElement('div');n.className='note'+(err?' err':'');n.innerHTML=html;chat.el.appendChild(n);stickyScroll(chat);return n;}
 const MODE_NAME={'read-only':'Read-only','ask':'Ask first','allow':'Allow all'};
+const AS_CHIP='Ask first + review'; /* spec 003 FR-120 (C4): Ask first with the app's reviewer on, wherever the mode is named (2026-11-25) */
 /* spec 099 FR-056: the real mode, wherever it is said: Autopilot is Allow all plus a session state, never a value of permMode */
-function modeNameOf(i){return i&&i.autopilot?'Autopilot':MODE_NAME[(i||{}).permMode];}
+function modeNameOf(i){return i&&i.autopilot?'Autopilot':i&&i.permMode==='ask'&&i.assisted&&i.assisted.on===true?AS_CHIP:MODE_NAME[(i||{}).permMode];}
 /* spec 003 (2026-10-21): a session that came back (restart or Previous sessions) says in its chat which mode it is in and why, so a mode never changes unseen */
 function modeBackNote(a,was){
   const i=a&&a.info; if(!i||!i.permMode||!i.permFrom||a.parent)return;
@@ -6606,15 +6609,15 @@ function tIntent(T,txt){
 }
 function tTool(T,e){
   const box=tChips(T);
-  if(e.phase==='start'){const {label,full:cmd,ask}=chipArgs(e);const el=makeChip({tool:e.tool,label,full:cmd,res:'running',state:'run'});addChip(box,el);
-    const c=T.chipEls[e.callId]={el,tool:e.tool,label,cmd,t0:e.timestamp,seen:Date.now(),box,T,state:'run',res:'running',output:'',ms:null,edit:e.edit||null};
+  if(e.phase==='start'){const {label,full:cmd,more,cut,long,ask}=chipArgs(e);const el=makeChip({tool:e.tool,label,full:cmd,more,cut,long,res:'running',state:'run'});addChip(box,el);
+    const c=T.chipEls[e.callId]={el,tool:e.tool,label,cmd,more,cut,long,t0:e.timestamp,seen:Date.now(),box,T,state:'run',res:'running',output:'',ms:null,edit:e.edit||null};
     c.cp={sid:e.sessionId,callId:e.callId,ask,rec:c};el._cp=c.cp; /* spec 005 FR-411: what Copy asks main for (ids only) */
     if(c.edit)edPaint(c);
     tAct(T,e.callId,c);}
   else{const c=T.chipEls[e.callId];if(c){
     /* spec 005 FR-019: an update may bring the whole arguments (a call that started from its streamed arguments) and the edit so far */
     if(e.edit)c.edit=e.edit;
-    if(e.args!==undefined){const {label:l,full:f,ask}=chipArgs(e);if(l)c.label=l;if(f)c.cmd=f;if(c.cp)c.cp.ask=ask;} /* spec 005 FR-342: masked like the start; FR-411: main keeps these latest arguments */
+    if(e.args!==undefined){const {label:l,full:f,more:mo,cut:ct,long:lg,ask}=chipArgs(e);if(l){c.label=l;c.more=mo;c.cut=ct;c.long=0;}if(f)c.cmd=f;if(lg){c.label='';c.cmd='';c.more=0;c.cut=0;c.long=lg;}if(c.cp)c.cp.ask=ask;} /* spec 005 FR-342: masked like the start; FR-411: main keeps these latest arguments; FR-438: an over-limit argument replaces the old one by its length */
     if(e.phase!=='update'||e.output!=null){const full=String(e.output||''),done=e.phase!=='update';
       c.ms=done&&typeof c.t0==='number'&&typeof e.timestamp==='number'?e.timestamp-c.t0:null; /* spec 052 FR-063: duration from the start and end events' times */
       c.res=done?SHORT(full||(e.phase==='complete'?'ok':'failed'),60):'running';c.output=full;c.state=!done?'run':e.phase==='failed'?'failed':'ok';
@@ -6702,7 +6705,7 @@ function mcpNotSent(a,chat,text,fromComposer){
   scheduleRender();
 }
 function chipRepaint(c){
-  const el=makeChip({tool:c.tool,label:c.label,full:c.cmd,ms:c.ms,res:c.res,output:c.output,state:c.state});
+  const el=makeChip({tool:c.tool,label:c.label,full:c.cmd,more:c.more,cut:c.cut,long:c.long,ms:c.ms,res:c.res,output:c.output,state:c.state});
   if(c.cp)el._cp=c.cp; /* spec 005 FR-411 */
   el.style.animation='none'; /* a repaint is not a new call: no pop (FR-021, no jank while the arguments stream) */
   if(c.el.classList.contains('open')){el.classList.add('open');el.setAttribute('aria-expanded','true');}
@@ -7169,16 +7172,21 @@ function chipArg(tool,raw){
   if(s.length>cap){const b=s.slice(0,cap+1).search(/\s\S*$/);s=b>0?s.slice(0,b):'';if(!s.trim())return {label:'',full:'',hid:true};}
   const flat=s.replace(/\s+/g,' '), k=toolKind(tool), m1=STX?STX.maskLabel(s,k,TOOLMASK):'', m2=flat===s?m1:STX?STX.maskLabel(flat,k,TOOLMASK):'';
   if(!m1||!m2)return {label:'',full:'',hid:true};
-  const t=flat.trim();if(m1===t&&m2===t)return {label:flat.slice(0,400),full:s.slice(0,OUT_SHOWN),hid:s!==s0}; /* spec 005 FR-411: `hid`, something was hidden or cut (Copy then asks first) */
+  /* spec 005 FR-438: more = the masked one-line text past the line's 400 that the open box shows, counted after the mask; cut = what the caps leave out
+     (the characters not read past MASK_INPUT_MAX, as received, and the masked ones past OUT_SHOWN): counted, never dropped without a word */
+  const unread=s0.length-s.length, t=flat.trim();if(m1===t&&m2===t)return {label:flat.slice(0,400),full:s.slice(0,OUT_SHOWN),hid:s!==s0,more:Math.max(0,Math.min(flat.length,OUT_SHOWN)-400),cut:unread+Math.max(0,flat.length-OUT_SHOWN)}; /* spec 005 FR-411: `hid`, something was hidden or cut (Copy then asks first) */
   let m='';try{m=m1===m2?m1:RED.keepShownBy(m1,m2);}catch(e){m='';}if(typeof m!=='string'||!m)return {label:'',full:'',hid:true};
-  return {label:m.slice(0,400),full:m.slice(0,OUT_SHOWN),hid:true};
+  return {label:m.slice(0,400),full:m.slice(0,OUT_SHOWN),hid:true,more:Math.max(0,Math.min(m.length,OUT_SHOWN)-400),cut:unread+Math.max(0,m.length-OUT_SHOWN)};
 }
 /* a label an adapter already cut (a replayed history item: 300 characters, Codex 200 and "…"; the VS Code transcript: 300 or 200 with "…"): the cut may
    fall inside a secret, whose head the masks no longer know, so a label the adapter cut (exactly 300 characters, or ending in "…") loses its last run
    of non-blanks before it is masked; any other label is masked as it is */
 const cutLabel=(tool,l)=>{let x=String(l==null?'':l);if(x.length===300||(x.length>=150&&x.endsWith('\u2026'))){const b=x.search(/\s\S*$/);x=(b>0?x.slice(0,b):'')+' \u2026';}return chipArg(tool,x).label;};
 /* the chip's label and command for a toolCall event: an edit names its file (main masked the edit, FR-024; masked here again like the task line) */
-const chipArgs=e=>{const a=chipArg(e.tool,toolArg(e.args)),f=editLabel(e);return {label:f?chipArg(e.tool,f).label:a.label,full:a.full,ask:a.hid||e.argsMasked===true};}; /* spec 005 FR-411: `ask`, Copy asks first (the chip's own mask hid or cut something, or main says its mask changed it) */
+/* spec 005 FR-411: `ask`, Copy asks first (the chip's own mask hid or cut something, or main says its mask changed it). FR-438: `more` (the line
+   leaves out that many characters of the masked argument; not for an edit's file label) and `long` (main sent the argument empty because the masks
+   do not take its length: main's `argsLong`, a number only) */
+const chipArgs=e=>{const a=chipArg(e.tool,toolArg(e.args)),f=editLabel(e),n=e.argsLong,lg=Number.isSafeInteger(n)&&n>((RED&&Number(RED.MASK_INPUT_MAX))||12288)?n:0;return {label:f?chipArg(e.tool,f).label:a.label,full:a.full,more:f?0:a.more||0,cut:f?0:a.cut||0,long:f||a.label?0:lg,ask:a.hid||e.argsMasked===true};}; /* FR-438: argsLong only as a finite integer over MASK_INPUT_MAX, else ignored */
 /* ---------------- AI-credit cap: chip, dialog, limit reached (spec 011) ---------------- */
 let APP_SETTINGS={};
 function capChipHTML(a){
@@ -7697,16 +7705,17 @@ function showPerm(a,p){
   const n=document.createElement('div');n.className='note perm';n.setAttribute('role','group');n.setAttribute('aria-label','Permission request');
   n.innerHTML='<b>Needs your OK:</b> <span class="psum"></span><span class="pstate"></span>';
   const ps=n.querySelector('.psum');
-  const sumS=shownPerm(p.summary,p.kind), scopeS=shownPerm(p.scopeLabel||p.kind||'this',p.kind), broadS=shownPerm(p.broadScopeLabel||p.kind,p.kind); /* spec 097 FR-318: only the shown words; the request id, scope keys and the answer stay raw */
+  const pc=permCardOf(p), sumS=pc.sum, scopeS=pc.scope, broadS=pc.broad; /* spec 097 FR-318: only the shown words; the request id, scope keys and the answer stay raw */
   ps.textContent=sumS.text;
   if(p.state==='pending'&&typeof p.diff==='string'&&p.diff)n.appendChild(diffBlock(p.diff)); /* spec 052 FR-063 */
   if(p.state==='pending'&&typeof p.sandboxNote==='string'&&p.sandboxNote){const sn=document.createElement('p');sn.className='psbx';sn.textContent=safeMask(p.sandboxNote.slice(0,300));n.appendChild(sn);} /* spec 087 FR-021: its own line, never cut */
   if(p.state==='pending'){const sh=typeof DurbarGrantLabel!=='undefined'?DurbarGrantLabel.scopeHint(Object.assign({},p,{scopeLabel:p.scopeLabel?scopeS.text:p.scopeLabel,broadScopeLabel:p.broadScopeLabel?broadS.text:p.broadScopeLabel})):'';if(sh){const sp=document.createElement('p');sp.className='pscope';sp.textContent=safeMask(sh);n.appendChild(sp);}} /* spec 003 FR-108: how far "for this session" reaches, in words */
-  const keyS=p.scopeKey?shownPerm(grantText(p.scopeKey,p.scopeLabel),String(p.scopeKey)):null; /* spec 003 FR-118: the session button names exactly what it grants */
+  const keyS=pc.key; /* spec 003 FR-118: the session button names exactly what it grants */
   const hwhy=permWhy(sumS,scopeS,broadS,keyS), hgrant=hwhy&&!permBlind(hwhy)&&(p.scopeKey||p.broadScopeKey)?PERM_GRANT:'';
   if(p.state==='pending'&&hwhy){const hp=document.createElement('p');hp.className='pscope phid';hp.textContent=PERM_WHY[hwhy]+hgrant;n.appendChild(hp);} /* also a card with no grant (a bare tool name): the line says what is hidden */ /* spec 097 FR-318: what a grant covers stays truthful when a part is hidden */
   const look=p.state==='pending'&&!permBlind(hwhy)?lookLine(sumS,keyS||scopeS,broadS):''; /* spec 003 FR-118: a blind card shows no text, so no lookalike line; the whole key, not the cut label (a token cut in it is no longer a token the mask knows: fix round 2) */
   if(look){const lp=document.createElement('p');lp.className='pscope plook';lp.textContent=look;n.appendChild(lp);} /* warn, never block (owner decision 1): no button changes for it */
+  if(p.state==='pending'&&typeof p.review==='string'&&Object.prototype.hasOwnProperty.call(AS_REVIEW,p.review)){const jp=document.createElement('p');jp.className='pscope pjudge';jp.textContent=AS_REVIEW[p.review];n.appendChild(jp);} /* spec 003 FR-130: why the app's reviewer left it to you, from a fixed table */
   const st=n.querySelector('.pstate');
   if(p.state==='denied'){ /* spec 003 FR-094: with the button the text no longer repeats the suggestion */
     st.innerHTML=roAskHint(a,n)?' <i>(denied: this agent is in Read-only)</i>':' <i>(denied: this agent is in Read-only. Switch it to Ask first to be asked instead)</i>';
@@ -7994,7 +8003,7 @@ function brainDoorPaint(){
 function onLiveEvent(e){
   const a=liveById(e.sessionId); if(!a)return;
   if(e.type==='permission'&&e.permission)whyNote(a,e.permission); /* spec 003 FR-099: why a call ran without asking, for its tool card's tag */
-  if(e.type==='permission'&&e.permission&&(e.permission.via==='policy'||e.permission.via==='quiet'))return; /* spec 052 FR-071: an Allow all approval is for the activity log in main, no card; a quiet read is only for the tag */
+  if(e.type==='permission'&&e.permission&&(e.permission.via==='policy'||e.permission.via==='quiet'||e.permission.via==='app-review'))return; /* spec 052 FR-071: an Allow all approval is for the activity log in main, no card; a quiet read is only for the tag; spec 003 FR-124: so is the app reviewer's approval */
   a.lastEventAt=Date.now(); /* spec 052 FR-062: last activity (when it arrived here; a helper's event counts for its main agent) */
   feedStats(a,e);
   liveFeed(a,e); /* spec 001 FR-028 */
@@ -8014,6 +8023,8 @@ function onLiveEvent(e){
   }
   if(e.type==='title'){if(!e.agentId)applyTitle(a,e.title);return;}
   if(e.type==='sandbox'){if(!e.agentId)onSandbox(a,e);return;} /* spec 087 */
+  if(e.type==='assisted'){if(!e.agentId)onAssisted(a,e);return;} /* spec 003 FR-127 */
+  if(e.type==='status'&&e.status==='stopped'&&!e.agentId&&a.info&&a.info.assisted)a.info.assisted=undefined; /* spec 003 FR-129: an ended session comes back without it */
   if(e.type==='agentSchedule'){if(!e.agentId)onAgentSchedule(a,e);return;}
   if(e.type==='subagent')return onSubagent(a,e);
   onRetry(a,e); /* spec 034 FR-018/FR-019: before the switch, so an error after a retry already knows it gave up */
@@ -8212,7 +8223,7 @@ function showSandboxNotice(a,nt){
   announce(safeMask(nt.text));
 }
 async function continueWithoutSandbox(a,note,btn,always){
-  const app=kindWord(a.info&&a.info.adapterId),mode=MODE_NAME[a.info&&a.info.permMode]||'this mode';
+  const app=kindWord(a.info&&a.info.adapterId),mode=modeNameOf(a.info)||'this mode'; /* spec 003 (2026-11-25, review of PR 2122): the chip's word, 'Ask first + review' while the reviewer is on */
   const ok=await askDialog({title:always?'Always continue without the OS sandbox?':'Continue without the OS sandbox?',
     body:always?app+' runs without its OS sandbox in every session on this computer. Durbar’s own checks still apply, and it still tries the sandbox at each start. You can undo this in Settings > Agent apps.':app+' runs without its OS sandbox for this session. Durbar’s own checks still apply ('+mode+'). Nothing is sent now: send your message again.',
     returnFocus:btn,buttons:[{label:'Cancel',value:null},{label:always?'Always continue':'Continue without the sandbox',value:'ok',cls:'primary warn'}]});
@@ -8504,7 +8515,8 @@ function modeChipHTML(a){if(a.info.autopilot)return apChipHTML(a);const m=a.info
   const sr=canSbxRestart(a), sw=sbxWord(a),sbx=sw&&!sr?`<span class="mode-sbx sbx-${esc(a.info.sandbox.state)}" data-sbx="${esc(a.info.sandbox.state)}" title="${esc(sbxTip(a))}"> · ${esc(sw)}</span>`:'';
   const sbtn=sr?`<button class="mode-sbx mode-sbx-btn sbx-${esc(a.info.sandbox.state)}" id="sbxRestartBtn" type="button" data-act="sbxRestart" data-sbx="${esc(a.info.sandbox.state)}"${a.sbxRestarting?' aria-disabled="true"':''} aria-label="${esc(sw+'. Restart without the sandbox…')}" title="${esc(sbxRestartTip(a))}">${esc(sw)}</button>`:'';
   if(!feat(a,'modes'))return `<span class="modechip${m==='allow'?' modebadge':''}" title="Set when the session starts">${esc(MODE_NAME[m]+fr)}${sbx}</span>${sbtn}`; /* spec 052 FR-065 */
-  return `<button class="mode-chip mode-${m}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(MODE_NAME[m])}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(MODE_NAME[m]+fr)}${sbx}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>${sbtn}`;}
+  const nm=m==='ask'&&asOn(a)?AS_CHIP:MODE_NAME[m]; /* spec 003 FR-120 (C4): Ask first with the app's reviewer on */
+  return `<button class="mode-chip mode-${m}${nm!==MODE_NAME[m]?' mode-review':''}" id="modeChip" type="button" aria-haspopup="menu" aria-expanded="false" title="Permission mode: ${esc(nm)}${rs?(a.info.permFrom==='session'?' (restored: the mode you last chose for this session)':' (restored from your last run)'):''}. Click to change."><span class="mi">${MODE_IC[m]}</span><span>${esc(nm+fr)}${sbx}</span>${rs?'<span class="mode-restored">restored</span>':''}${ICON('chev')}</button>${sbtn}`;}
 /* the chip and its sandbox button are repainted together (the button is the chip's next sibling) */
 function setModeChip(c,a){const o=$('sbxRestartBtn');if(o)o.remove();c.outerHTML=modeChipHTML(a);}
 /* spec 087 FR-022/FR-022a: the pure rule (sandboxtext.js) on this agent's state, mode and app capabilities; the existing Restart session flow and channel */
@@ -8600,6 +8612,47 @@ function showAutoQuestion(a,e){
   qs.forEach(q=>{const p=document.createElement('p');p.className='q-text';p.textContent=safeMask(String(q&&q.question||''));n.appendChild(p);});
   tChips(t.T).appendChild(n);stickyScroll(liveChat(a));
 }
+/* ---------------- spec 003 FR-120..FR-131: the agent app's reviewer (Copilot's assisted approvals) inside Ask first. The page follows main:
+   it approves nothing itself; the words are fixed (never the reviewer's text) ---------------- */
+const AS_MODE='assisted'; /* its menu class is built from it as the modes' are (spec 070 FR-054) */
+const AS_POLICY="Your organization turned off Copilot's assisted approvals. This session stays in Ask first.";
+const AS_HONEST='A model, not a security boundary: use only with trusted content.'; /* FR-131 (2026-11-25): the visible line under the switch */
+const AS_REMOTE='Stop remote control first: assisted approvals and remote control from GitHub are never on together.';
+const AS_REVIEW={declined:"Copilot's reviewer did not approve this.",never:'Copilot never auto-approves this kind.',undecided:"Copilot's reviewer could not decide."}; /* FR-130 (C4) */
+const asCap=a=>{const c=capsFor(a).assistedApproval;return c&&typeof c==='object'?c:null;};
+/* C8: a real session shows it only once the real check passed (`verified`); the simulator always does */
+const asOffered=a=>!!(a&&a.info&&!a.parent&&bridge.setPermMode&&asCap(a)&&(SIM||asCap(a).verified===true));
+const asOn=a=>!!(a&&a.info&&a.info.assisted&&a.info.assisted.on===true);
+const orgAssisted=kind=>{const v=ORG[kind||defaultKind()||'copilot'],x=v&&v.assisted;return x&&typeof x.why==='string'?{why:x.why,refuse:x.refuse===true}:null;};
+function asMenuItem(a){if(!asOffered(a)||a.info.permMode!=='ask'||a.info.autopilot)return '';
+  const app=kindWord(a.info.adapterId),o=orgAssisted(a.info.adapterId),on=asOn(a);
+  const why=on?'':o&&o.refuse?o.why+'.':a.remote?AS_REMOTE:''; /* FR-127, FR-126: disabled with the reason; turning off is always possible */
+  /* FR-131 (C7): the cost sentence in the title (a static tooltip: at most 120 characters, check-ui-text); an organization's doubt there too, as the mode items do */
+  const help=o?o.why:'Each review is a model call on your '+app+' account (gpt-5.5 by default) and may use AI credits.';
+  /* constitution III (2026-11-25, review rounds 6-8): what the reviewer is not, as the switch's own hint line (its aria-describedby); one short
+     sentence, so the card's mode menu still fits a 1280x800 window (check:office, sim-2) */
+  const small=why||AS_HONEST;
+  return `<button type="button" role="menuitemcheckbox" aria-checked="${on}" data-act="assisted" class="mm-${AS_MODE}${why?' mm-org':''}"${why?' aria-disabled="true"':''} aria-describedby="asNote" title="${esc(why||help)}"><span class="mt"><b>${esc('Let '+app+"'s reviewer approve safe requests")}</b><small id="asNote">${esc(small)}</small></span><span class="ck">${on?'\u2713':''}</span></button>`;}
+/* FR-122: one call to main (agents:setMode with opts.assisted); main's answer is what the chip shows */
+async function assistedToggle(a,anchor){
+  if(!a||a.asAsking||!bridge.setPermMode)return;
+  const want=!asOn(a);a.asAsking=true;
+  let res;try{res=await bridge.setPermMode(a.id,'ask',{assisted:want});}catch(e){res={ok:false,error:String(e&&e.message||e)};}
+  a.asAsking=false;
+  if(byId(a.id)!==a)return;
+  if(res&&res.ok)a.info.assisted=res.assisted===true?{on:true}:undefined;
+  else{a.info.assisted=undefined;addNote(liveChat(a),esc(safeMask(String(res&&res.error||'unknown error'))),true);}
+  apRepaint(a);
+  if(res&&res.ok){announce(asOn(a)?AS_CHIP+': the reviewer approves safe requests from the next one.':'Ask first: the reviewer is off.');toast(esc(a.name)+': <b>'+esc(asOn(a)?AS_CHIP:MODE_NAME.ask)+'</b> from the next request.',4200);}
+  refocusAnchor(anchor);
+}
+/* FR-127: the reviewer went off without the user asking (policy, a fallback, a reconnect): one fixed note for the policy; the runtime's words are never shown */
+function onAssisted(a,e){
+  if(!a.info)return;
+  a.info.assisted=e.assisted&&e.assisted.on===true?{on:true}:undefined;
+  if(e.reason==='policy')addNote(liveChat(a),esc(AS_POLICY));
+  apRepaint(a);
+}
 function closeModeMenu(){const m=document.getElementById('modeMenu');if(m){m.remove();const c=$('modeChip');if(c)c.setAttribute('aria-expanded','false');document.querySelectorAll('[data-act="ro-ask"][aria-expanded="true"]').forEach(b=>b.setAttribute('aria-expanded','false'));}}
 function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the three modes and the note, without Model, Plan first, folder setup or card actions */
   const a=liveRoot(a0); if(!a||!a.live)return false;
@@ -8615,10 +8668,10 @@ function openModeMenu(a0,x,y,anchor,o){ /* o.modesOnly (spec 003 FR-095): the th
   const m=document.createElement('div');m.id='modeMenu';m.className='mode-menu';m.setAttribute('role','menu');m.setAttribute('aria-label',menuLabel(hasOps?'Actions for ':'Permission mode for ',a));
   m.innerHTML=(hasMode?['read-only','ask','allow'].filter(k=>feat(a,'modeList',k)).map(k=>{const o=orgMode(a.info.adapterId,k),w=o?o.why:''; /* spec 076 FR-202: blocked: disabled, the reason as its text; advice (FR-201): the words, still selectable */
     const isOn=a.info.permMode===k&&!a.info.autopilot; /* spec 099 FR-056: on Autopilot the check mark is on Autopilot, not on Allow all */
-    return `<button type="button" role="menuitemradio" aria-checked="${isOn}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${isOn?'✓':''}</span></button>`;}).join('')+(only?'':apMenuItem(a))+(canSbxRestart(a)&&!onCard?`<button type="button" role="menuitem" data-act="sbxRestart" class="mm-sbxrestart"${a.sbxRestarting?' aria-disabled="true"':''} title="${esc(sbxRestartTip(a))}"><span class="mt"><b>Restart without the sandbox</b><small>Keeps this conversation; a new session in Allow all</small></span></button>`:'')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
+    return `<button type="button" role="menuitemradio" aria-checked="${isOn}" data-mode="${k}" class="mm-${k}${w?(o.refuse?' mm-org':' mm-orgdoubt'):''}"${o&&o.refuse?' aria-disabled="true"':''} title="${esc(w||MODE_HELP[k])}"><span class="mi">${MODE_IC[k]}</span><span class="mt"><b>${MODE_NAME[k]}</b><small>${esc(w||MODE_SHORT[k])}</small></span><span class="ck">${isOn?'✓':''}</span></button>`;}).join('')+asMenuItem(a)+(only?'':apMenuItem(a))+(canSbxRestart(a)&&!onCard?`<button type="button" role="menuitem" data-act="sbxRestart" class="mm-sbxrestart"${a.sbxRestarting?' aria-disabled="true"':''} title="${esc(sbxRestartTip(a))}"><span class="mt"><b>Restart without the sandbox</b><small>Keeps this conversation; a new session in Allow all</small></span></button>`:'')+(!only&&bridge.setModel&&a.info?`<button type="button" role="menuitem" data-act="model" class="mm-model"><span class="mt"><b>Model and context…</b><small>${esc(modelLabel(a.info).text)}</small></span></button>`:'')+(!only&&capsFor(a)&&capsFor(a).planMode&&!a0.parent?`<button type="button" role="menuitemcheckbox" aria-checked="${!!a.planNext}" data-act="planNext" class="mm-plan"><span class="mt"><b>Plan first (next message)</b><small>It plans first; you approve before it acts.</small></span><span class="ck">${a.planNext?'✓':''}</span></button>`:'')+(!only&&bridge.folderSetupScan&&window.DurbarFolderSetup&&a.info?`<button type="button" role="menuitem" data-act="foldersetup" class="mm-fsetup"><span class="mt"><b>This folder\u2019s setup…</b><small>${a.info.folderRules?'Its own hooks or allow rules are on':'Hooks, rules and MCP servers in its files'}</small></span></button>`:'')+`<p class="mm-note">Applies from the next request. The session keeps running.</p>`+(sbxWord(a)?`<p class="mm-note mm-sbx"><b>${esc(sbxWord(a))}.</b> ${esc(sbxDetails(a))}</p>`:''):'')+(hasOps?`<div class="mm-sep" role="separator"></div>`+(canRead?`<button type="button" role="menuitem" data-op="read" class="mm-read"><span class="mt"><b>Mark as read</b><small>Clears \u201cNew\u201d without opening the chat</small></span></button>`:'')+(canRen?`<button type="button" role="menuitem" data-op="rename" class="mm-rename" title="Give this session a short name"><span class="mt"><b>Rename…</b><small>A short name for this session</small></span></button>`:'')+(ops.stop?`<button type="button" role="menuitem" data-op="stop" class="mm-stop"${ops.stop.disabled?` aria-disabled="true" aria-describedby="mmStopWhy" title="${esc(ops.stop.reason)}"`:''}><span class="mt"><b>Stop</b><small${ops.stop.disabled?' id="mmStopWhy"':''}>${esc(ops.stop.disabled?ops.stop.reason:'Stops this reply. The agent stays open.')}</small></span></button>`:'')+(ops.end&&bridge.end?`<button type="button" role="menuitem" data-op="end" class="mm-end mm-danger"><span class="mt"><b>End session</b><small>Send a message to pick up where you left off.</small></span></button>`:''):'');
   document.body.appendChild(m);
   const {px,py}=placeMenu(m,x,y,anchor); /* spec 005 FR-037: above a toolbar chip */
-  m.addEventListener('click',e=>{const ap=e.target.closest('[data-act="autopilot"]');if(ap){if(ap.getAttribute('aria-disabled')==='true')return;closeModeMenu();if(!a.info.autopilot)void autopilotFlow(a,anchor);return;}const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)focusIn(mi);return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const sr=e.target.closest('[data-act="sbxRestart"]');if(sr){if(sr.getAttribute('aria-disabled')==='true')return;closeModeMenu();restartWithoutSandbox(a,anchor);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b||b.getAttribute('aria-disabled')==='true')return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
+  m.addEventListener('click',e=>{const asb=e.target.closest('[data-act="assisted"]');if(asb){if(asb.getAttribute('aria-disabled')==='true')return;closeModeMenu();void assistedToggle(a,anchor);return;}const ap=e.target.closest('[data-act="autopilot"]');if(ap){if(ap.getAttribute('aria-disabled')==='true')return;closeModeMenu();if(!a.info.autopilot)void autopilotFlow(a,anchor);return;}const pn=e.target.closest('[data-act="planNext"]');if(pn){a.planNext=!a.planNext;closeModeMenu();renderAttached();announce(a.planNext?'The next message asks for a plan first.':'Plan first is off.');const mi=$('msgInput');if(mi)focusIn(mi);return;}const g=e.target.closest('[data-act="model"]');if(g){closeModeMenu();openModelMenu(a,px,py,anchor);return;}if(e.target.closest('[data-act="foldersetup"]')){closeModeMenu();window.DurbarFolderSetup.openFor(a.info);return;}const sr=e.target.closest('[data-act="sbxRestart"]');if(sr){if(sr.getAttribute('aria-disabled')==='true')return;closeModeMenu();restartWithoutSandbox(a,anchor);return;}const o=e.target.closest('[data-op]');if(o){if(o.getAttribute('aria-disabled')==='true')return;closeModeMenu();cardOp(a,o.dataset.op,anchor);return;}const b=e.target.closest('[data-mode]');if(!b||b.getAttribute('aria-disabled')==='true')return;closeModeMenu();changeMode(a,b.dataset.mode,anchor);});
   m.addEventListener('keydown',e=>{const it=[...m.querySelectorAll('[data-mode],[data-act],[data-op]')],i=it.indexOf(document.activeElement);
     if(e.key==='ArrowDown'){e.preventDefault();focusIn(it[(i+1)%it.length]);}else if(e.key==='ArrowUp'){e.preventDefault();focusIn(it[(i+it.length-1)%it.length]);}
     else if(e.key==='Escape'||e.key==='Tab'){e.preventDefault();e.stopPropagation();closeModeMenu();if(anchor&&anchor.focus&&document.contains(anchor))focusIn(anchor);}});
@@ -8726,7 +8779,7 @@ async function changeModeInner(a,mode,anchor){
   const res=await bridge.setPermMode(a.id,mode,opts).catch(e=>({ok:false,error:String(e&&e.message||e)}));
   if(onAp){a.info.autopilot=undefined;apRepaint(a);}
   if(!res||!res.ok){toast('Could not change the mode: '+esc((res&&res.error)||'unknown error'),5000);return;}
-  a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; a.role=roleFor(a.info); roAskAfterSwitch(a,mode,anchor);
+  a.info.permMode=mode; a.info.permRestored=undefined; a.info.permFrom=undefined; if(mode!=='ask')a.info.assisted=undefined; /* spec 003 FR-126: main turned the reviewer off with the switch */ a.role=roleFor(a.info); roAskAfterSwitch(a,mode,anchor);
   if(opts.clearGrants)setGrants(a,[]);
   renderRestoreStrip();
   toast(esc(a.name)+': <b>'+esc(MODE_NAME[mode])+(capsFor(a).permModeSwitch==='next-message'?'</b>. Applies from the next message.':'</b> from the next request.')+(mode==='allow'?' Everything runs without asking.':''),4200);
@@ -10762,7 +10815,10 @@ if(bridge){
       const UPD_NAME={claude:'Claude Code',codex:'Codex',copilot:'The GitHub Copilot CLI'};
       real.onHarnessUpdates(v=>{window.DurbarHarnesses.setUpdates(v);const a=v&&v.announce;if(a&&typeof a.version==='string'&&UPD_NAME[a.app])toast(esc(UPD_NAME[a.app]+' '+a.version)+' is available. Open Settings > Agent apps to update.',6000);});
       real.harnessUpdates().then(v=>window.DurbarHarnesses.setUpdates(v),()=>undefined);
-    }}
+    }
+    /* spec 118 FR-462..FR-464: Durbar's own update check runs in main; the window shows the More menu line, the About block and one toast per version (main says when) */
+    if(real&&real.selfUpdateGet&&window.DurbarSelfUpdate)window.DurbarSelfUpdate.init({bridge:real,askDialog,onAnnounce:v=>toastAction(esc('Agent Durbar v'+v+' is available.'),'See what is new',()=>{void window.DurbarSelfUpdate.openDialog();},10000)});
+  }
   $('schedTopBtn').onclick=openSchedulesView; /* spec 044 FR-030 */
   /* spec 052 FR-083: Settings… (⌘,) in the macOS app menu. The real window's preload carries it, also under the simulator. */
   {const real=window.agentDurbar;if(real&&real.onMenuSettings)real.onMenuSettings(()=>window.DurbarScreens.openSettings());
@@ -10822,7 +10878,7 @@ if(pendingOpen&&demoOn){openPanel(pendingOpen,false);pendingOpen=null;}
 const settleNow=()=>{if(!agentsListed||!window.__durbarSimReplayed||baselineQueued||baselineAsking)return false;if(renderQueued){renderQueued=false;renderAll();}return true;};
 /* simulator drivers load with simfreeze=1: the desk glow then holds still (FR-178: the geometry and screenshot checks measure boxes, so no zoom may be mid-way); the unread driver opts back in with hlmotion=1 to test the motion itself */
 if(SIM&&qs.get('simfreeze')==='1'&&qs.get('hlmotion')!=='1')document.documentElement.classList.add('hl-still');
-if(SIM)window.__durbarSimUi={chipArg:(t,r)=>chipArg(t,r),cutLabel:(t,l)=>cutLabel(t,l),chipMasks:()=>CHIP_MASKS,replay:(id,items)=>{replayHistory(byId(id),{items},'test');return true;},vsView:(id,tr)=>viewVs(byId(id),'sim-vs',null,()=>Promise.resolve({ok:true,transcript:tr})).then(()=>true),demoTurn:(id,tools)=>{const a=byId(id);return playTurn(getChat(a),a,{think:'',tools,reply:''});},taskLabel:(t,l)=>safeToolLabel(t,String(l).replace(/\s+/g,' ').slice(0,400),100000),chipEl:(id,callId)=>{const a=byId(id),c=a&&a.turn&&a.turn.T&&a.turn.T.chipEls[callId];return c?c.el:null;}, /* spec 005 FR-342: check-toolchip-mask runs its harmless corpus through the chip's own mask and counts its calls */qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,on:()=>brainOn(),override:BRAIN_OVERRIDE,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
+if(SIM)window.__durbarSimUi={chipArg:(t,r)=>chipArg(t,r),chipNoteOf:e=>{const a=chipArgs(e),el=makeChip({tool:e.tool,label:a.label,full:a.full,more:a.more,cut:a.cut,long:a.long}),n=el.querySelector('.argmore'),x=el.querySelector('.argcut');return {long:a.long,note:n?n.textContent:'',cutLine:x?x.textContent:'',title:el.title,full:a.full.length};}, /* spec 005 FR-438 (review of PR 2119): check-005-long-args sends bad argsLong values straight to the chip's own chipArgs and makeChip */cutLabel:(t,l)=>cutLabel(t,l),chipMasks:()=>CHIP_MASKS,replay:(id,items)=>{replayHistory(byId(id),{items},'test');return true;},vsView:(id,tr)=>viewVs(byId(id),'sim-vs',null,()=>Promise.resolve({ok:true,transcript:tr})).then(()=>true),demoTurn:(id,tools)=>{const a=byId(id);return playTurn(getChat(a),a,{think:'',tools,reply:''});},taskLabel:(t,l)=>safeToolLabel(t,String(l).replace(/\s+/g,' ').slice(0,400),100000),chipEl:(id,callId)=>{const a=byId(id),c=a&&a.turn&&a.turn.T&&a.turn.T.chipEls[callId];return c?c.el:null;}, /* spec 005 FR-342: check-toolchip-mask runs its harmless corpus through the chip's own mask and counts its calls */qMdHTML,qSafeMask:t=>safeMask(t),qNames:()=>Object.keys(Q_NAMED).map(k=>k+'='+Q_NAMED[k]), /* spec 052 (issue 1927): check-question-markdown renders a question built from invented pieces through the card's own renderer */brain:{host:()=>BRAIN_H,state:()=>BRAIN_STATE,why:()=>BRAIN_WHY,on:()=>brainOn(),override:BRAIN_OVERRIDE,queued:()=>BRAIN_Q.length}, /* spec 106 T006: check-brain-draw and check-brain-dock read the dock's frame counts */announce,renderRestoreStrip,afArrivalPrio,afTracker:{ids:()=>AFT.ids(),pending:()=>AFT.pendingList().map(v=>v.id+'|'+v.kind),quiet:()=>AFT.isQuiet,follow:id=>AFT.follow(id)}, /* spec 005 FR-237: drivers only: what Auto-follow follows, holds and whether it is quiet; follow() makes an agent followed without a hand open (which would drop the others, spec 052 FR-185) */ afNotice:{ms:v=>{AF_NOTICE_MS=Math.max(100,Number(v)||3000);return AF_NOTICE_MS;},on:v=>{setAutoFollowOn(!!v);return AF_ON;},shown:()=>!!AF_NOTICE}, /* spec 052 FR-239: drivers only: the notice's length, Auto-follow without Settings */swapCardOptions:id=>{const c=byId(id)&&pendingCardOf(byId(id));if(!c)return 0;const os=[...c.querySelectorAll('.q-opt')];os.forEach(b=>b.replaceWith(b.cloneNode(true)));return os.length;}, /* spec 052 FR-197: the live card rebuilds its options (the card stays, the old buttons are gone); a driver checks that a row's old option answers nothing */
   chatTrimNow:()=>chatTrimPending(false), /* spec 005 FR-238: trim the chats waiting for a frame now (a burst with no frame between) */
   hiddenTrimTimer:()=>({on:!!hiddenTrimT,ms:TRIM_HIDDEN_MS}),
   helperState:(id,st)=>{const h=agents.find(x=>x.id===id&&x.parent);if(!h||!['working','thinking','waiting','error','limit','done','idle'].includes(st))return false;h.state=st==='limit'?'waiting':st;h.limit=st==='limit';h.paused=false;layoutKey='';renderAll();return true;}, /* spec 097 T335 (issue 1642): drivers only: a helper's state the simulator never sends (waiting, limit), for the kids on the desk */

@@ -3,12 +3,13 @@
 import * as assert from 'assert';
 import * as fs from 'fs';
 import * as path from 'path';
-import { placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
+import { FX_POSE, placeBox, portraitCrop, PORTRAIT_SIDE, slipAvoid, NOTE_PAPER, NOTE_PAPER_DEFAULT, NOTE_INK, notePaper, screenFit, screenFor, personMotion, zoomRect, realLayout, lobbyWidths, sortDesks, deskOrder, deskBase, assignPeople, standPose, standHeight, POSE_FRAME_B, lobbyRange, PERSON_M, DOOR_M, FRONT_DEPTH, NEAR_SCALE, CHIP_H, U_MIN, U_MAX, U_MAX_BIG, FACE_U, PLATE_H, PLATE_H_ASK, STRIP,
   type RealModel, type RealMeta, type RealAgent, type RealState, type Rect, type Layout } from '../src/shared/realoffice-layout';
 import { signMin, lobbyBand, lobbyScale, visitorScale, snapDevice, devStep, HEAD, HEAD_FACE, HELP_FACE_MIN, HELP_GAP, helpH, helpCols, helpShown, headCrop, helperPerson } from '../src/shared/realoffice-layout';
 import { DOTS_BOX, DOTS_CLEAR, HEAD_CLEAR, STRIP as STRIP_H, seatsOf, standOf, type HdSet } from '../src/shared/realoffice-layout';
 import { layoutFor } from '../src/shared/realoffice-arrangements';
 import { KID_U, KID_CAP, BIG_MAX, kidScale, kidBox, kidPose, kidHeadCrop, kidOf, helperHead, type KidMeta, type DeskBox } from '../src/shared/realoffice-layout';
+import { loungeSeat, loungeRows, LOUNGE_CARD_MIN, LOUNGE_ROW, LOUNGE_CHROME } from '../src/shared/realoffice-layout';
 import { createHash } from 'crypto';
 import { CHARACTER_CHOICES } from '../src/shared/characters';
 import { lampWords, lightFor, lightState, LIGHT_TABLE, ambientFor, doneTick, fixtureLight, isActive, type LightState } from '../src/shared/lights';
@@ -357,6 +358,44 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
 // ---- FR-024, FR-191: stand poses and fallbacks ----
 {
   for (const [place, pose] of Object.entries({ library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' })) assert.strictEqual(standPose(META, 'p01', place, false)!.pose, pose, `${place}: ${pose}`);
+  /* issue #2042, the contract: EVERY place of FX_POSE, for a set that has `counter` (META: Office people) and for one that lacks it (Prehistoric: `coffee` and `letter`, no `counter`, `type`): the pose each place resolves to. A change in any place's result fails here;
+     the same table runs against mutated copies of the compiled module (below), each of which must die at its own assert. */
+  const poseTable = (sp: typeof standPose, fx: Record<string, string>): void => {
+    const prehistoricSet = JSON.parse(JSON.stringify(META)) as RealMeta;
+    for (const pid of Object.keys(prehistoricSet.stand)) { const ps = prehistoricSet.stand[pid].poses; for (const p of ['counter', 'type', 'typeA', 'typeB']) delete ps[p]; ps.coffee = ps.letter; }
+    const expectOffice: Record<string, string> = { library: 'book', software: 'book', terminal: 'runA', web: 'type', boss: 'knock', coffee: 'counter', bank: 'counter', postbox: 'letter', other: 'type' };
+    const expectPrehistoric: Record<string, string> = { library: 'book', software: 'book', terminal: 'runA', web: 'letter', boss: 'knock', coffee: 'coffee', bank: 'letter', postbox: 'letter', other: 'letter' };
+    assert.deepStrictEqual(Object.keys(fx).sort(), Object.keys(expectOffice).sort(), 'the table lists every place of FX_POSE');
+    for (const place of Object.keys(fx)) {
+      assert.strictEqual(sp(META, 'p01', place, false)!.pose, expectOffice[place], `a set with the counter pose (Office people): ${place} resolves to ${expectOffice[place]}`);
+      assert.strictEqual(sp(prehistoricSet, 'p01', place, false)!.pose, expectPrehistoric[place], `a set without the counter pose (Prehistoric): ${place} resolves to ${expectPrehistoric[place]} (the Bank holds the letter, never the coffee corner's cup)`);
+    }
+    const bookOnly = JSON.parse(JSON.stringify(prehistoricSet)) as RealMeta; for (const pid of Object.keys(bookOnly.stand)) delete bookOnly.stand[pid].poses.letter;
+    assert.strictEqual(sp(bookOnly, 'p01', 'bank', false)!.pose, 'book', 'the Bank without counter and letter: the book');
+    const coffeeOnly = JSON.parse(JSON.stringify(bookOnly)) as RealMeta; for (const pid of Object.keys(coffeeOnly.stand)) delete coffeeOnly.stand[pid].poses.book;
+    assert.strictEqual(sp(coffeeOnly, 'p01', 'bank', false)!.pose, 'coffee', 'the Bank with only the coffee pose: the coffee (a visitor is never lost)');
+    assert.strictEqual(sp(prehistoricSet, 'p01', 'c-abc', true)!.pose, 'letter', 'a custom place is not the Bank: wait, else letter');
+  };
+  poseTable(standPose, FX_POSE);
+  {
+    const compiled = path.join(__dirname, '..', 'src', 'shared', 'realoffice-layout.js');
+    const lf = fs.readFileSync(compiled, 'utf8').replace(/\r\n/g, '\n');
+    const mutants: Array<[string, string, string, RegExp]> = [
+      ['the Bank falls back to the coffee again', "bank: ['counter', 'letter', 'book', 'coffee']", "bank: ['counter', 'coffee']", /Prehistoric\): bank resolves to letter/],
+      ['the Bank skips the letter', "bank: ['counter', 'letter', 'book', 'coffee']", "bank: ['counter', 'book', 'coffee']", /Prehistoric\): bank resolves to letter/],
+      ['the coffee corner changed', "counter: 'coffee'", "counter: 'letter'", /Prehistoric\): coffee resolves to coffee/],
+      ['the place list is dropped', "exports.PLACE_POSES = { bank: ['counter', 'letter', 'book', 'coffee'] };", "exports.PLACE_POSES = {};", /Prehistoric\): bank resolves to letter/],
+    ];
+    mutants.forEach(([name, from, to, expect], k) => {
+      assert.ok(lf.includes(from), `mutant "${name}": its text is in the compiled module`);
+      const mp = path.join(path.dirname(compiled), `realoffice-layout.mutant-${process.pid}-${k}.js`);
+      fs.writeFileSync(mp, lf.split(from).join(to));
+      let died: Error | undefined;
+      try { const m = require(mp) as { standPose: typeof standPose; FX_POSE: Record<string, string> }; poseTable(m.standPose, m.FX_POSE); } catch (e) { died = e as Error; } finally { fs.rmSync(mp, { force: true }); }
+      assert.ok(died, `mutant "${name}" survived`);
+      assert.ok(expect.test(String(died.message)), `mutant "${name}" died at the wrong assert: ${String(died.message).split(/\r?\n/)[0]}`);
+    });
+  }
   assert.strictEqual(standPose(META, 'p01', 'c-abc', true)!.pose, 'letter', 'a custom place: wait, else letter');
   const noBook = JSON.parse(JSON.stringify(META)) as RealMeta; delete noBook.stand.p01.poses.book;
   assert.strictEqual(standPose(noBook, 'p01', 'library', false), null, 'a pose with no fallback and no picture: no figure (the initials disc stays)');
@@ -366,9 +405,10 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
 // ---- spec 097 FR-024 (issue #2013): a set with only the coffee and letter poses (Prehistoric) stands its Bank, coffee corner, Web and Other tools visitors; one with no pose at all keeps its chip off the frame line ----
 {
   const few = JSON.parse(JSON.stringify(META)) as RealMeta; for (const pid of Object.keys(few.stand)) for (const p of ['counter', 'type', 'typeA', 'typeB']) delete few.stand[pid].poses[p];
-  assert.strictEqual(standPose(few, 'p01', 'bank', false), null, 'no counter picture and no coffee one: no figure');
+  const bare = JSON.parse(JSON.stringify(few)) as RealMeta; for (const pid of Object.keys(bare.stand)) for (const p of ['coffee', 'letter', 'book']) delete bare.stand[pid].poses[p];
+  assert.strictEqual(standPose(bare, 'p01', 'bank', false), null, 'no counter, letter, book or coffee picture: no figure');
   const prehistoric = JSON.parse(JSON.stringify(few)) as RealMeta; for (const pid of Object.keys(prehistoric.stand)) prehistoric.stand[pid].poses.coffee = prehistoric.stand[pid].poses.letter;
-  assert.strictEqual(standPose(prehistoric, 'p01', 'bank', false)?.pose, 'coffee', 'a set with `coffee` and no `counter`: Omar stands at the Bank in the coffee pose (the cave lost him, #2013)');
+  assert.strictEqual(standPose(prehistoric, 'p01', 'bank', false)?.pose, 'letter', 'a set with `coffee` and `letter` and no `counter`: Omar stands at the Bank with the letter, not the cup (#2013 kept him, #2042)');
   assert.strictEqual(standPose(prehistoric, 'p01', 'coffee', false)?.pose, 'coffee', 'the coffee corner too');
   assert.strictEqual(standPose(prehistoric, 'p01', 'web', false)?.pose, 'letter', 'Web: letter when there is no typing picture');
   for (const [W, H] of SIZES) {
@@ -603,8 +643,37 @@ assert.ok(Object.values(META.stand).some((s) => Object.values(s.foot as Record<s
       const canvasScaled = { ...rs, hd: { ...hd, busts: Object.fromEntries(Object.entries(hd.busts).map(([k, v]) => [k, { ...v, bodyH: v.h, headTop: 0 }])) } }; /* mutant: scaled on the canvas, not on the figure */
       assert.ok(check(canvasScaled, 'red').some((x) => / figure /.test(x)), 'red: a set scaled on its canvas (not its figure) draws a smaller person and fails');
       const narrow = { ...rs, hd: { ...hd, loungeW: 0 } }; /* mutant: the seat follows the HD canvas */
-      assert.ok(check(narrow, 'red').some((x) => /lounge card/.test(x)), 'red: a lounge seat that follows the HD canvas is narrower and fails');
+      /* spec 097 FR-439: the card never goes under LOUNGE_CARD_MIN, so the mutant shows in the art's own width (`aw`: the person and the small desk's place), which `loungeW` still keeps at the old set's */
+      const art = (set: unknown): number => loungeSeat(metaOf(wj('photo'), set) as unknown as RealMeta).aw;
+      assert.ok(art(narrow) < art(rs), `red: a lounge seat that follows the HD canvas has a narrower art (${art(narrow)} px, not ${art(rs)} px)`);
       console.log('T472 no shrink: figures within 3 % of the old set, lounge cards no narrower, at 3 and 15 agents in the Photo office and the cave');
+    }
+    { // spec 097 FR-439 (issue 2076): the lounge card holds the widest name and role of the demo crew with every people set, in both rows worlds and both sizes; the art keeps its place; the arcade's seat is as it was
+      type LD = { slot: Rect; plate: Rect; table: Rect; person: { x: number } | null };
+      const widths = (cardMin: number | null): { w: Set<number>; plate: number; art: Set<string>; n: number } => {
+        const w = new Set<number>(), art = new Set<string>(); let plate = Infinity, n = 0;
+        for (const wd of ['photo', 'cave']) for (const [W, H] of SIZES.slice(0, 2)) for (const set of C.REAL_SETS) {
+          const meta = metaOf(wj(wd), sj(set.id)) as unknown as RealMeta, m = model(15, 4, { away: false, states: ['done'] });
+          m.folders.flatMap((f) => f.agents).forEach((a, i) => { a.person = PEOPLE[i % 15]; a.lounge = i % 3 === 1; });
+          const seated0 = m.folders.flatMap((f) => f.agents).filter((a) => a.lounge);
+          const L = (cardMin === 0 ? { lounge: loungeRows(meta, seated0, W, 0, 0).row } : realLayout(m, { w: W, h: H }, meta)) as unknown as { lounge?: { desks: LD[] } }; /* the mutant: the seat rule as it was, no minimum */
+          assert.ok(L.lounge && L.lounge.desks.length > 0, `FR-439: ${wd} ${set.id} ${W}x${H}: a lounge row`);
+          for (const d of L.lounge!.desks) { n++; w.add(d.slot.w); plate = Math.min(plate, d.plate.w); }
+          /* the art keeps its place in the seat: the person and the small desk sit where the seat without a minimum puts them, from the seat's left */
+          const seated = seated0, at = (d: DeskBox): string => `${d.person ? (d.person.x - d.slot.x).toFixed(2) : '-'}|${((d.table as Rect).x - d.slot.x).toFixed(2)}`;
+          art.add(`${at(loungeRows(meta, seated, W, 0, cardMin === null ? LOUNGE_CARD_MIN : cardMin).row.desks[0])} = ${at(loungeRows(meta, seated, W, 0, 0).row.desks[0])}`);
+        }
+        return { w, plate, art, n };
+      };
+      const ok = widths(null);
+      assert.deepStrictEqual([...ok.w], [LOUNGE_CARD_MIN], `FR-439: every set, world and size has one lounge card width (${[...ok.w]})`);
+      assert.ok(ok.plate >= LOUNGE_ROW + LOUNGE_CHROME, `FR-439: the plate (${ok.plate} px) holds the widest name and role (${LOUNGE_ROW} px) beside the padding, border and rename pencil (${LOUNGE_CHROME} px)`);
+      for (const a of ok.art) { const [x, y] = a.split(' = '); assert.strictEqual(x, y, `FR-439: the person and the small desk keep their place from the seat's left: ${a}`); }
+      const old = widths(0); /* mutant: the old derivation, the card follows the art */
+      assert.ok(old.w.size > 1 && old.plate < LOUNGE_ROW + LOUNGE_CHROME, `red: the card that follows the art has ${old.w.size} widths (${[...old.w]}) and a plate of ${old.plate} px`);
+      const R = sj('retro'); assert.strictEqual(loungeSeat(metaOf(wj('photo'), R) as unknown as RealMeta).w, 141, 'FR-439: with no minimum (the arcade) the Retro seat is its old 141 px');
+      assert.strictEqual(loungeSeat(metaOf(wj('photo'), sj('office')) as unknown as RealMeta).w, 130, 'FR-439: and the Office seat its 130 px');
+      console.log(`FR-439 lounge card: ${ok.n} seats, one width ${LOUNGE_CARD_MIN} px (plate at least ${ok.plate} px) with the ${C.REAL_SETS.length} sets, both worlds, both sizes; without the minimum ${[...old.w].sort().join(' and ')} px`);
     }
     { // spec 102 T472 (coordinator's look at F1, round 2): the dots and the ask bubble clear an HD head; at the big level the head stays HEAD_CLEAR below the screen's glass
       type D2 = { id: string; state: string; person: { x: number; y: number; w: number; h: number; pid: string; pose: string; fileB: string | null } | null; dots: { x: number; y: number } | null; bubble: { x: number; y: number } | null; glass: Rect };

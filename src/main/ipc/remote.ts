@@ -36,6 +36,7 @@ export function register(deps: RemoteIpcDeps): ReturnType<typeof createRemoteOps
       });
     },
     autopilotOn: (id) => !!deps.autopilotOn?.(id),
+    assistedOn: (id) => !!agents.get(id)?.assisted, // spec 003 FR-126 (C6)
     record: (id, on) => {
       const a = agents.get(id);
       if (a) logActivity(a, on ? 'remote-on' : 'remote-off', on ? 'Remote control from GitHub turned on' : 'Remote control from GitHub turned off');

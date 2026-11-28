@@ -5,6 +5,11 @@
  *   OUT=docs/screenshots DURBAR_USER_DATA=$(mktemp -d) DURBAR_SIM=15 DURBAR_SIM_FREEZE=1 \
  *     DURBAR_DRIVER=$PWD/scripts/shots-095.js xvfb-run -a npx electron . --no-sandbox
  *
+ * Issue #2144: the late-start step (a query that goes short while the start is pending) holds the simulator's start (`simsearch=delayed`) until the driver releases it, so no clock races it.
+ *   SEARCH_MUTANT=early   the answer is released before the Backspaces (the old race, forced): dies at "the late start is cancelled"
+ *   SEARCH_MUTANT=single  the wait for the cancel is one read (the release is on the simulator's own 250 ms timer): dies at the same assert
+ *   SEARCH_MUTANT=short   the wait for the cancel lasts 1 ms: dies at the same assert
+ *
  * Real key presses (sendInputEvent) and typed text (insertText), at 1440x900 and 1280x800; exits non-zero on a miss:
  *   FR-001  the box sits after the view toggle (or its magnifier on a narrow bar), with no overflow and text of 10.5px or more
  *   FR-003  Ctrl+Shift+F (⇧⌘F) focuses it from a desk; Escape with a query clears it, goes back to the Office view and to that desk
@@ -30,6 +35,7 @@
 const assert = require('assert');
 const path = require('path');
 const { helpers, jsLiteral } = require('./driver-helpers');
+const SEARCH_MUTANT = process.env.SEARCH_MUTANT || ''; // issue #2144: early (the answer before the Backspaces), single (one read), short (1 ms): each must fail in the late-start step
 const OUT = process.env.OUT || '/tmp';
 const MOD = process.platform === 'darwin' ? 'meta' : 'control';
 /* test forcing for issue 2101 (see the header; never set by a suite entry): RAF = ms the page's requestAnimationFrame is late; SLEEP = the old fixed 500 ms sleeps; NEVER = a mark the app never clears */
@@ -343,11 +349,15 @@ module.exports = async (ctx) => {
     await H.calm();
     await spy();
     await typeQuery('registry');
-    await ctx.sleep(300);
+    /* issue #2144: the simulator HOLDS the start until released (it was a fixed 700 ms that a slow runner could outrun, so the answer came before the Backspaces and was a clear, not a cancel):
+       wait for the start to be pending, shorten the query, then release the answer (on the simulator's own 250 ms timer, so the cancel arrives after the release) and wait for the cancel */
+    await ok(`typeof window.__durbarSimSearchHeld==='function'&&window.__durbarSimSearchHeld()>=1`, `${w}: the start is pending (held by the simulator)`);
+    if (SEARCH_MUTANT === 'early') await js(`window.__durbarSimSearchGo(0)`); // the old race, forced: the answer comes before the Backspaces
     for (let i = 0; i < 6; i++) await key('Backspace', [], { char: 'never', pause: 10 });
     await ok(`document.getElementById('convSearch').value==='re'`, `${w}: the query is "re" while the start is pending`);
-    await ok(`window.__durbarSimUi.bridge().__csCancels===1`, `${w}: the late start is cancelled`, 4000);
-    await ctx.sleep(1500);
+    await js(`window.__durbarSimSearchGo(250)`);
+    await ok(`window.__durbarSimUi.bridge().__csCancels===1`, `${w}: the late start is cancelled`, SEARCH_MUTANT === 'single' ? -1 : SEARCH_MUTANT === 'short' ? 1 : 4000);
+    await js(`new Promise((r)=>requestAnimationFrame(()=>requestAnimationFrame(r)))`); // the cancel stopped the scan's timer: one more frame, then nothing can arrive
     const late = await js(`({rows:document.querySelectorAll('#list .cs-hit').length,state:(document.querySelector('#list .cs-st')||{}).textContent||'',cancels:window.__durbarSimUi.bridge().__csCancels})`);
     assert.ok(late.rows === 0 && late.cancels === 1 && !/^Searching/.test(late.state), `${w}: no rows and one cancel after a late start: ${JSON.stringify(late)}`);
     await key('Escape', [], { char: 'never' });

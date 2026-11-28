@@ -62,13 +62,24 @@ fs.mkdirSync(fx);
 // files API: page 2 only with --paginate, as the real gh; absent = the call fails), pull.json (the PR: changed_files, head sha;
 // pull-later.json: what every read after the first returns, a push while the gate runs; pull-later.fail: those reads fail),
 // contents/<path> (a file at the head commit; absent = 404), alerts-merge.json / alerts-head.json / alerts-main.json (the PR's base branch; head and main also page 2 as *2.json; absent = the call fails; FR-099);
+// FR-427: a read the gate makes through rd() runs with GATE_READ=<its name> (logged in reads.log); bad.<name> holds how that read goes wrong: exit1, malformed (not JSON),
+// errors (valid data plus an errors member), nodata (data null plus errors), text (a non-number where a count is read), file (the answer in resp.<name>); repo.fail / user.fail fail those two calls.
 // the comment lists are empty and the PR is ours
 fs.writeFileSync(path.join(bin, 'gh'), `#!/bin/bash
 F="${fx}"; prog=.; prev=
 for a in "$@"; do { [ "$prev" = --jq ] || [ "$prev" = -q ]; } && prog=$a; prev=$a; done
 ep=; for a in "$@"; do case $a in repos/*|graphql|user) ep=$a; break;; esac; done
+[ -n "$GATE_READ" ] && echo "$GATE_READ" >> "$F/reads.log"
+if [ -n "$GATE_READ" ] && [ -f "$F/bad.$GATE_READ" ]; then case $(cat "$F/bad.$GATE_READ") in
+  exit1) echo "fake gh: $GATE_READ failed" >&2; exit 1;;
+  malformed) echo '{not json' | jq -r "$prog"; exit;;
+  errors) echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]},"comments":{"nodes":[]},"reviews":{"nodes":[]}}}},"errors":[{"message":"boom"}]}' | jq -r "$prog"; exit;;
+  nodata) echo '{"data":null,"errors":[{"message":"boom"}]}' | jq -r "$prog"; exit;;
+  text) echo abc; exit;;
+  file) jq -r "$prog" < "$F/resp.$GATE_READ"; exit;;
+esac; fi
 case "$1 $2" in
-  "repo view") echo '{"nameWithOwner":"o/r"}' | jq -r "$prog"; exit;;
+  "repo view") [ -f "$F/repo.fail" ] && { echo "fake gh: repo view failed" >&2; exit 1; }; echo '{"nameWithOwner":"o/r"}' | jq -r "$prog"; exit;;
   "pr checks") n=$(( $(cat "$F/checks.n" 2>/dev/null || echo 0) + 1 )); echo $n > "$F/checks.n"; c="$F/checks.txt"; [ -f "$F/checks.$n.txt" ] && c="$F/checks.$n.txt"
     [ -f "$F/checks.after" ] && [ "$n" -ge "$(cat "$F/checks.after")" ] && c="$F/checks.late.txt"; [ -f "$F/checks.mod" ] && [ $((n % $(cat "$F/checks.mod"))) = 0 ] && c="$F/checks.late.txt"
     [ -f "$c" ] || { echo "fake gh: checks failed" >&2; exit 1; }; cat "$c"; [ -f "$F/checks.exit0" ] && exit 0
@@ -76,7 +87,7 @@ case "$1 $2" in
   "pr view") echo '{"mergeable":"MERGEABLE","files":[{"path":"package-lock.json"}],"labels":[]}' | jq -r "$prog"; exit;;
 esac
 case $ep in
-  user) echo '{"login":"vikramgorla"}' | jq -r "$prog"; exit;;
+  user) [ -f "$F/user.fail" ] && { echo "fake gh: user failed" >&2; exit 1; }; echo '{"login":"vikramgorla"}' | jq -r "$prog"; exit;;
   graphql) echo '{"data":{"repository":{"pullRequest":{"reviewThreads":{"nodes":[]},"comments":{"nodes":[]},"reviews":{"nodes":[]}}}}}' | jq -r "$prog"; exit;;
   repos/o/r/code-scanning/alerts?ref=refs/pull/1/merge*) f=alerts-merge;;
   repos/o/r/code-scanning/alerts?ref=refs/pull/1/head*) f=alerts-head;;
@@ -96,6 +107,12 @@ case " $* " in *" --paginate "*) [ -f "$F/\${f}2.json" ] && { jq -r "$prog" < "$
 exit 0
 `, { mode: 0o755 });
 const env = { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` };
+// FR-425: the gate compares its own files with origin/main's through `git`; a fake git (scripts/fake-git.js) answers, so no case reaches the real repository.
+// A case sets gitEnv (FAKE_GIT_DIFF, FAKE_GIT_FETCH_RC, FAKE_GIT_NOREPO, FAKE_GIT_LOG: see that file); runCase clears it first.
+// the gate copies sit in folders that need a `.git` entry, or the gate takes them for installed copies (no checkout) and blocks (FR-425): one marker per copy root
+fs.mkdirSync(path.join(dir, '.git'));
+fs.writeFileSync(path.join(bin, 'git'), `#!/bin/bash\nexec node "${path.join(SCRIPTS, 'fake-git.js')}" "$@"\n`, { mode: 0o755 });
+let gitEnv: Record<string, string> = {};
 
 // the required names of the ruleset record (FR-420); a copy of the file sits where each gate copy looks for it (<gate dir>/../.github)
 const RULESET = path.join(ROOT, '.github', 'ruleset-main.json');
@@ -146,7 +163,7 @@ const fixture = (o: { codeql?: string | null; checks?: boolean; files?: File[] |
   set('pull-later.fail', null);
   set('pull.seen', null);
   set('checkruns.fail', null);
-  for (const f of fs.readdirSync(fx)) if (/^checks\.(\d+\.txt|n|exit0|after|mod|late\.txt)$/.test(f) || f.startsWith('sleep.')) fs.rmSync(path.join(fx, f));
+  for (const f of fs.readdirSync(fx)) if (/^(checks\.(\d+\.txt|n|exit0|after|mod|late\.txt)|bad\..+|resp\..+|reads\.log|repo\.fail|user\.fail)$/.test(f) || f.startsWith('sleep.')) fs.rmSync(path.join(fx, f));
   // the head commit's check runs, "name@slug" or "name@slug#id" (id 101 by default, the run the CodeQL line links): by default one CodeQL
   // run from GitHub's code-scanning app (null: the call fails)
   const runs = (l: string[]): string => JSON.stringify({ check_runs: l.map((x) => { const [name, rest] = x.split('@'); const [slug, id] = rest.split('#'); return { name, id: Number(id ?? 101), app: { slug } }; }) });
@@ -169,7 +186,7 @@ const waitRun = (g: string): { code: number | null; out: string } => { gateArgs 
 let gateArgs: string[] = [];
 const run = (gatePath: string): { code: number | null; out: string } => {
   const wait = gateArgs.includes('--wait');
-  const r = spawnSync('bash', [gatePath, '1', ...gateArgs], { env: wait ? { ...env, PATH: `${waitBin}${path.delimiter}${env.PATH}` } : env, encoding: 'utf8', timeout: wait ? 90000 : 60000 });
+  const r = spawnSync('bash', [gatePath, '1', ...gateArgs], { env: { ...(wait ? { ...env, PATH: `${waitBin}${path.delimiter}${env.PATH}` } : env), ...gitEnv }, encoding: 'utf8', timeout: wait ? 90000 : 60000 });
   assert.ok(!/fake gh: no fixture/.test(r.stderr), r.stderr);
   return { code: r.status, out: r.stdout + r.stderr };
 };
@@ -191,6 +208,7 @@ const gateWith = (g: string, record: unknown): string => {
   const d = path.join(dir, 'own-ruleset', 'scripts');
   fs.rmSync(path.join(dir, 'own-ruleset'), { recursive: true, force: true });
   fs.mkdirSync(d, { recursive: true });
+  fs.mkdirSync(path.join(d, '..', '.git'));
   for (const f of ['trusted-lib.sh', 'trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(d, f));
   fs.copyFileSync(g, path.join(d, 'pr-gate.sh'));
   if (record !== null) {
@@ -427,9 +445,85 @@ const CASES: Record<string, Case> = {
   'src-error: the file list cannot be read': N({ codeql: 'pass', files: null }, /src-check-unreadable/),
   'src-partial: the file list fails after its first page': N({ codeql: 'pass', files: ['docs/a.md'] }, /src-check-unreadable/, () => set('files.fail', '')),
   'src-empty: the files API lists no file (changed_files 0)': N({ codeql: 'pass', files: [], changed: 0 }, /src-check-unreadable/),
+  // FR-425: the gate's own files must equal origin/main's; a fetch that fails, or a folder that is no checkout, blocks too
+  'stale-gate: gate files that differ from origin/main': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(scripts\/pr-gate\.sh scripts\/trusted-authors\.txt: run the gate from a checkout at origin\/main\)/, () => { gitEnv = { FAKE_GIT_DIFF: 'scripts/trusted-authors.txt scripts/pr-gate.sh' }; }),
+  'stale-each: every gate input is compared': (g, l) => {
+    for (const f of ['scripts/pr-gate.sh', 'scripts/trusted-lib.sh', 'scripts/trusted-authors.txt', 'scripts/pr-gate-answered.awk', 'scripts/pr-status-note.re', '.github/ruleset-main.json', 'scripts/safe-print.js']) {
+      fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+      gitEnv = { FAKE_GIT_DIFF: f };
+      notReady(g, `${l} (${f})`, new RegExp(`stale-gate\\(${f.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')}: run the gate`));
+    }
+  },
+  'stale-missing: a gate file that origin/main lacks': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(scripts\/pr-status-note\.re: run the gate/, () => { gitEnv = { FAKE_GIT_MISSING: 'scripts/pr-status-note.re' }; }),
+  'stale-fetch: the fetch of origin main fails': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(git fetch origin main failed: the gate files cannot be compared/, () => { gitEnv = { FAKE_GIT_FETCH_RC: '1' }; }),
+  'stale-norepo: the folder has no .git at all': (g, l) => {
+    // a copy of the gate in a folder with no `.git` entry (an installed copy): blocked as no checkout
+    const d = path.join(dir, 'nogit', 'scripts');
+    fs.rmSync(path.join(dir, 'nogit'), { recursive: true, force: true });
+    fs.mkdirSync(d, { recursive: true });
+    for (const f of ['trusted-authors.txt', 'pr-status-note.re', 'pr-gate-answered.awk']) fs.copyFileSync(path.join(SCRIPTS, f), path.join(d, f));
+    fs.copyFileSync(path.join(path.dirname(g), 'trusted-lib.sh'), path.join(d, 'trusted-lib.sh')); // the lib that sits beside the gate under test (a lib mutant is one)
+    fs.copyFileSync(g, path.join(d, 'pr-gate.sh'));
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    notReady(path.join(d, 'pr-gate.sh'), l, /stale-gate\(not a git checkout/);
+  },
+  'stale-gitfails: git fails in a folder that has a .git': N({ codeql: 'pass', files: ['src/main/a.ts'] }, /stale-gate\(git fails in this checkout, dubious ownership or no git\?/, () => { gitEnv = { FAKE_GIT_NOREPO: '1' }; }),
+  'stale-equal: equal files pass, after one fetch of origin main': (g, l) => {
+    const log = path.join(fx, 'git.log');
+    fs.rmSync(log, { force: true });
+    gitEnv = { FAKE_GIT_LOG: log };
+    fixture({ codeql: 'pass', files: ['src/main/a.ts'] });
+    ready(g, l);
+    const calls = fs.readFileSync(log, 'utf8').split('\n').filter((c) => /fetch/.test(c));
+    assert.ok(calls.length === 1 && /fetch -q origin \+refs\/heads\/main:refs\/remotes\/origin\/main$/.test(calls[0]), `${l}: one fetch of origin main with the explicit refspec, got ${JSON.stringify(calls)}`);
+  },
   'checks-error: the check list cannot be read': N({ checks: false }, /codeql=missing /),
 };
+// FR-427: every read the verdict rests on: a failed one (exit 1, malformed output, a GraphQL errors member, no data, a text where a count is read)
+// makes the gate refuse with gate-read-failed(<read>); an empty but valid answer passes (the default fixture: all lists empty)
+const READS: Array<[string, boolean]> = [['labels', false], ['hold-comments', false], ['hold-reviews', false], ['hold-line-comments', false], ['reviews-changes', false], ['review-threads', true], ['outside-edits', true],
+  ['mine-comments', false], ['mine-reviews', false], ['mine-line-comments', false], ['newer-comments', false], ['newer-reviews', false], ['newer-line-comments', false], ['reviews-trusted', false]];
+const OKFIX = { codeql: 'pass', files: ['src/main/a.ts'] };
+for (const [n, graphql] of READS) {
+  const modes = ['exit1', 'malformed', ...(graphql ? ['errors', 'nodata'] : []), ...(n === 'review-threads' ? ['text'] : [])];
+  for (const m of modes) {
+    CASES[`gr-${n}-${m}: a failed read of ${n} (${m}) refuses`] = N(OKFIX, new RegExp(`gate-read-failed\\(${n}${m === 'text' ? ': no count' : ''}\\)`), () => set(`bad.${n}`, m));
+  }
+}
+// FR-427: a connection read of first/last 100 that holds more than it returned refuses; exactly 100 passes
+const page = (more: boolean, total: number, extra: Record<string, unknown> = {}): Record<string, unknown> => ({ totalCount: total, pageInfo: { hasNextPage: more, hasPreviousPage: more }, nodes: [], ...extra });
+const answer = (pr: unknown): string => JSON.stringify({ data: { repository: { pullRequest: pr } } });
+const outside = (o: { comments?: Record<string, unknown>; reviews?: Record<string, unknown>; threads?: Record<string, unknown> }): string => answer({ comments: o.comments ?? page(false, 100), reviews: o.reviews ?? page(false, 100), reviewThreads: o.threads ?? page(false, 100) });
+const TRUNC_THREADS = /gate-read-failed\(review-threads: more than 100 review threads\)/;
+const TRUNC_EDITS = /gate-read-failed\(outside-edits: more than 100 comments, reviews, threads or thread comments\)/;
+const withAnswer = (name: string, json: string) => (): void => { set(`bad.${name}`, 'file'); set(`resp.${name}`, json); };
+const MORE: Record<string, Case> = {
+  'gr-review-threads-more: more than 100 review threads (a next page) refuses': N(OKFIX, TRUNC_THREADS, withAnswer('review-threads', answer({ reviewThreads: page(true, 100) }))),
+  'gr-review-threads-morecount: a total of 101 threads over 100 nodes refuses': N(OKFIX, TRUNC_THREADS, withAnswer('review-threads', answer({ reviewThreads: page(false, 101) }))),
+  'gr-review-threads-exact: exactly 100 threads read passes': (g, l) => { fixture(OKFIX); withAnswer('review-threads', answer({ reviewThreads: page(false, 100) }))(); ready(g, l); },
+  'gr-outside-edits-more: more than 100 comments (an earlier page) refuses': N(OKFIX, TRUNC_EDITS, withAnswer('outside-edits', outside({ comments: page(true, 100) }))),
+  'gr-outside-edits-morecount: a total of 101 reviews over 100 nodes refuses': N(OKFIX, TRUNC_EDITS, withAnswer('outside-edits', outside({ reviews: page(false, 101) }))),
+  'gr-outside-edits-morenested: more than 100 comments in one thread refuses': N(OKFIX, TRUNC_EDITS, withAnswer('outside-edits', outside({ threads: page(false, 100, { nodes: [{ comments: page(true, 100) }] }) }))),
+  'gr-outside-edits-exact: exactly 100 of each read passes': (g, l) => { fixture(OKFIX); withAnswer('outside-edits', outside({ threads: page(false, 100, { nodes: [{ comments: page(false, 100) }] }) }))(); ready(g, l); },
+  'gr-empty-ok: every read answers an empty list and the gate passes, through all fourteen named reads': (g, l) => {
+    fixture(OKFIX);
+    ready(g, l);
+    const seen = fs.readFileSync(path.join(fx, 'reads.log'), 'utf8').split('\n').filter(Boolean);
+    assert.deepStrictEqual(seen, READS.map(([n]) => n), `${l}: the reads that go through rd(), in order`);
+  },
+  'gr-repo: a failed repository read refuses': N(OKFIX, /gate-read-failed\(repo-or-user/, () => set('repo.fail', '1')),
+  'gr-user: a failed user read refuses': N(OKFIX, /gate-read-failed\(repo-or-user/, () => set('user.fail', '1')),
+  'gr-checks-empty: a check list that prints nothing refuses': N(OKFIX, /gate-read-failed\(checks: gh pr checks printed nothing\)/, () => set('checks.txt', '')),
+  'gr-guard: the GraphQL guard is the text of gh-trusted.sh': () => {
+    const g1 = /^GUARD='(.*)'$/m.exec(gate.replace(/\r\n/g, '\n'));
+    const g2 = /^GUARD='(.*)'$/m.exec(fs.readFileSync(path.join(SCRIPTS, 'gh-trusted.sh'), 'utf8').replace(/\r\n/g, '\n'));
+    assert.ok(g1 && g2 && g1[1] === g2[1], 'gr-guard: pr-gate.sh and gh-trusted.sh carry the same GUARD text (one pattern for a GraphQL response that is no answer)');
+    assert.ok(!/\$\(gh api graphql/.test(gate) && !/^(?!notes=).*\$\( *\{ gh api/m.test(gate), 'gr-guard: no verdict read is a bare command substitution (every one goes through rd; only the printed status notes are not)');
+  },
+};
+Object.assign(CASES, MORE);
 const runCase = (g: string, name: string): void => {
+  gitEnv = {};
   const k = Object.keys(CASES).find((c) => c.startsWith(`${name}:`));
   assert.ok(k, `no case ${name}`);
   CASES[k as string](g, `CASE ${k}`);
@@ -507,17 +601,58 @@ try {
     ['a required name matched by prefix', `need="$need" awk -F'\\t' '$1==ENVIRON["need"]`, `need="$need" awk -F'\\t' 'index($1,ENVIRON["need"])==1`, 'required-prefix'],
     ['the pending-line test removed from the wait', '[ $? != 8 ] && ! pend; do', '[ $? != 8 ]; do', 'wait-pending-line'],
     ['the second look after the 90 s pause removed', '  pend || break\n', '  break\n', 'wait-second-look'],
+    ['the stale compare skipped', 'stale=$(gate_stale $GATE_FILES); case $? in', 'stale=; case 0 in', 'stale-gate'],
+    ['a failed fetch ignored', '  2) bad="$bad stale-gate(git fetch origin main failed', '  2) : "$bad stale-gate(git fetch origin main failed', 'stale-fetch'],
+    ['a folder with no checkout accepted', '  3) bad="$bad stale-gate(not a git checkout', '  3) : "$bad stale-gate(not a git checkout', 'stale-norepo'],
+    ['a git failure in a checkout accepted', '  *) bad="$bad stale-gate(git fails in this checkout', '  *) : "$bad stale-gate(git fails in this checkout', 'stale-gitfails'],
     ['the draft line removed', '[ "$pr_draft" = true ] && echo "a draft:', 'false && echo "a draft:', 'draft'],
+    ...READS.map(([n]): [string, string, string, string] => [`a failed read of ${n} treated as empty`, 'bad="$bad gate-read-failed($_n)"; fi; }', `{ [ "$_n" = ${n} ] || bad="$bad gate-read-failed($_n)"; }; fi; }`, `gr-${n}-exit1`]),
+    ['the errors member of review-threads not refused', '"$GUARD .data.repository.pullRequest.reviewThreads |', '".data.repository.pullRequest.reviewThreads |', 'gr-review-threads-errors'],
+    ['the errors member of outside-edits not refused', '; $GUARD .data.repository.pullRequest | if', '; .data.repository.pullRequest | if', 'gr-outside-edits-errors'],
+    ['a non-number thread count accepted', 'isnum "$threads" || [ "$threads" = unread ] || {', 'true || {', 'gr-review-threads-text'],
+    ['the thread count check removed', 'if (.totalCount // 0) > 100 or (.pageInfo.hasNextPage // false) then \\"TRUNCATED\\"', 'if (.pageInfo.hasNextPage // false) then \\"TRUNCATED\\"', 'gr-review-threads-morecount'],
+    ['the thread next-page check removed', 'if (.totalCount // 0) > 100 or (.pageInfo.hasNextPage // false) then \\"TRUNCATED\\"', 'if (.totalCount // 0) > 100 then \\"TRUNCATED\\"', 'gr-review-threads-more'],
+    ['the thread truncation not refused', '[ "$threads" != TRUNCATED ] || {', 'true || {', 'gr-review-threads-more'],
+    ['the outside-edit count check removed', 'def cut: (.totalCount // 0) > 100 or (.pageInfo', 'def cut: false or (.pageInfo', 'gr-outside-edits-morecount'],
+    ['the outside-edit earlier-page check removed', 'or (.pageInfo.hasPreviousPage // false); $GUARD', 'or false; $GUARD', 'gr-outside-edits-more'],
+    ['the thread comments of the outside-edit read not checked', ' or ([.reviewThreads.nodes[].comments] | any(cut))', '', 'gr-outside-edits-morenested'],
+    ['the outside-edit truncation not refused', '[ "$outside_edits" != TRUNCATED ] || {', 'true || {', 'gr-outside-edits-more'],
+    ['a failed repository read replaced by a default', '[ -n "$R" ] &&', '{ [ -n "$R" ] || R=o/r; } &&', 'gr-repo'],
+    ['a failed user read replaced by a default', '&& [ -n "$ME" ] ||', '&& { [ -n "$ME" ] || ME=vikramgorla; } ||', 'gr-user'],
+    ['an empty check list not named', '[ -n "$checks_empty" ] && bad=', 'false && bad=', 'gr-checks-empty'],
+    ['a read made without rd (labels)', "rd labels labels pr view $p --json labels -q '.labels[].name'", "labels=$(gh pr view $p --json labels -q '.labels[].name')", 'gr-empty-ok'],
     ['the base branch name not checked', "case $pr_baseref in ''|*[!A-Za-z0-9._/-]*|*..*) a_base_nums=ERR;;", "case $pr_baseref in 'zzzz') a_base_nums=ERR;;", 'alert-base-ref'],
   ];
   for (const [name, from, to, caught, at] of mutants) {
     assert.ok(gate.includes(from), `mutant "${name}": its anchor is in the gate`);
     const m = path.join(mdir, 'pr-gate.sh');
+    assert.notStrictEqual(gate.split(from).join(to), gate, `mutation did not apply: ${name}`);
     fs.writeFileSync(m, gate.split(from).join(to), { mode: 0o755 });
     let msg = '';
     try { runCase(m, caught); } catch (e) { msg = (e as Error).message; }
     assert.ok(msg.startsWith(`CASE ${caught}:`) && (!at || msg.split('\n')[0].includes(at)), `mutant "${name}" is caught by CASE ${caught}${at ? ` at "${at}"` : ''}, got: ${msg.split('\n')[0] || 'no failure'}`);
     if (process.env.DURBAR_MUTANT_LOG) console.log(`mutant "${name}": ${msg.split('\n')[0]}`);
+  }
+  // the same, for the compare itself, which lives in trusted-lib.sh: the mutated lib sits beside the unchanged gate copy, then is put back
+  const lib = fs.readFileSync(path.join(SCRIPTS, 'trusted-lib.sh'), 'utf8').replace(/\r\n/g, '\n');
+  fs.copyFileSync(path.join(SCRIPTS, 'pr-gate.sh'), path.join(mdir, 'pr-gate.sh'));
+  const libMutants: Array<[string, string, string, string]> = [
+    ['HEAD compared instead of the file on disk', 'have=$(git -C "$_trusted_root" hash-object -- "$f" 2>/dev/null)', 'have=$(git -C "$_trusted_root" rev-parse --verify -q "HEAD:$f" 2>/dev/null)', 'stale-gate'],
+    ['the fetch skipped', 'git -C "$_trusted_root" fetch -q origin +refs/heads/main:refs/remotes/origin/main >/dev/null 2>&1 || return 2', 'true', 'stale-fetch'],
+    ['a git failure in a checkout read as an installed copy', 'rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 4', 'rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 3', 'stale-gitfails'],
+    ['the .git test removed', '[ -e "$_trusted_root/.git" ] || return 3\n', '', 'stale-norepo'],
+    ['a plain fetch of origin main', 'fetch -q origin +refs/heads/main:refs/remotes/origin/main >/dev/null', 'fetch -q origin main >/dev/null', 'stale-equal'],
+    ['a file missing on origin/main counted equal', '|| { echo "$f"; continue; }\n    have=', '|| continue\n    have=', 'stale-missing'],
+    ['one gate input left out of the compare', 'scripts/pr-status-note.re .github/ruleset-main.json scripts/safe-print.js"', 'scripts/pr-status-note.re scripts/safe-print.js"', 'stale-each'],
+  ];
+  for (const [name, from, to, caught] of libMutants) {
+    assert.ok(lib.includes(from), `lib mutant "${name}": its anchor is in trusted-lib.sh`);
+    assert.notStrictEqual(lib.split(from).join(to), lib, `mutation did not apply: lib mutant ${name}`);
+    fs.writeFileSync(path.join(mdir, 'trusted-lib.sh'), lib.split(from).join(to));
+    let msg = '';
+    try { runCase(path.join(mdir, 'pr-gate.sh'), caught); } catch (e) { msg = (e as Error).message; }
+    assert.ok(msg.startsWith(`CASE ${caught}:`), `lib mutant "${name}" is caught by CASE ${caught}, got: ${msg.split('\n')[0] || 'no failure'}`);
+    if (process.env.DURBAR_MUTANT_LOG) console.log(`lib mutant "${name}": ${msg.split('\n')[0]}`);
   }
 } finally {
   fs.rmSync(dir, { recursive: true, force: true });

@@ -15,7 +15,7 @@ const NAME_MAX = 80;
 /** The most of an action `sanitizeActivityRow` reads before it masks (pre-review of PR 1317: without a bound a stored row of 20 million characters cost seconds). `cut` ends it before the start of a token, never inside one. */
 export const ACTIVITY_ACTION_READ_MAX = 20_000;
 
-export const ACTIVITY_DECISIONS = ['allowed-once', 'allowed-session', 'denied', 'auto-allow-all', 'auto-session-grant', 'mode-change', 'limit-change', 'remote-on', 'remote-off', 'session-deleted', 'mcp-restart', 'loop-start', 'loop-pass', 'loop-skip', 'loop-hold', 'loop-end', 'autopilot-on', 'autopilot-end', 'autopilot-off'] as const; // spec 072 FR-024: self-paced loops
+export const ACTIVITY_DECISIONS = ['allowed-once', 'allowed-session', 'denied', 'auto-allow-all', 'auto-session-grant', 'auto-app-review', 'mode-change', 'limit-change', 'remote-on', 'remote-off', 'session-deleted', 'mcp-restart', 'loop-start', 'loop-pass', 'loop-skip', 'loop-hold', 'loop-end', 'autopilot-on', 'autopilot-end', 'autopilot-off'] as const; // spec 072 FR-024: self-paced loops
 export type ActivityDecision = (typeof ACTIVITY_DECISIONS)[number];
 
 export interface ActivityRow {
@@ -111,6 +111,7 @@ export function decisionOf(p: { state?: unknown; via?: unknown; remembered?: unk
   if (!p || p.state === 'pending') return undefined;
   if (p.via === 'policy') return p.state === 'approved' ? 'auto-allow-all' : undefined;
   if (p.via === 'session') return p.state === 'approved' ? 'auto-session-grant' : undefined;
+  if (p.via === 'app-review') return p.state === 'approved' ? 'auto-app-review' : undefined; // spec 003 FR-124: approved once on the app reviewer's recommendation
   if (p.via === 'user') return p.state === 'denied' ? 'denied' : p.remembered === true ? 'allowed-session' : 'allowed-once';
   return undefined;
 }

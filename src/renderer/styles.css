@@ -480,6 +480,9 @@ body.panel-open .topbar,body.panel-open #stage-host,body.panel-open #list{displa
 .chip .res{font-size:11px;padding-left:6px;border-left:1px solid var(--line);color:var(--sage-ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;max-width:40%}
 .chip.fail{background:var(--tone-bad-soft);border-color:var(--tone-bad-line);color:var(--tone-bad-ink)}.chip.fail .res{color:var(--red-ink);border-color:var(--tone-bad-line)}
 .chip.run .res{color:var(--blue-ink)}
+.chip .argmore{font-size:var(--t5-size);color:var(--ink-2);white-space:nowrap;flex:none;font-style:italic} /* spec 005 FR-438: kept whole; the argument's line shrinks instead */
+.chip.open.has-cmd .argmore{display:none} /* the rest is on screen in the open command box */
+.chip .argmore+.res{flex-shrink:0} /* the status word stays readable beside the note (still at most 40%); the argument's line gives the room */
 .chip[hidden]{display:none}
 .chip .detail,.chip .xbody{display:none}
 .chip .why{font-size:11px;padding-left:6px;border-left:1px solid var(--line);color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:0;max-width:34%}
@@ -1080,7 +1083,7 @@ body.browser-big #panel .bpane :is(.bstrip,.bbar,.bstat){padding-left:var(--s-4)
 /* spec 052 FR-076: text fields in dialogs look alike (proportional type; monospace only for code, e.g. the summary editor and MCP commands) */
 .dlg textarea{border:1px solid var(--line-ctl);border-radius:var(--r-md);background:var(--raised);padding:8px 10px;font:inherit;font-size:13px;font-weight:400;color:var(--ink);resize:vertical}
 .ho-dlg textarea{width:100%;box-sizing:border-box;min-height:260px;max-height:55vh;resize:vertical;border:1px solid var(--line-ctl);border-radius:10px;background:var(--raised);padding:10px 12px;font:inherit;font-family:var(--font-mono);font-size:12px;line-height:1.5;color:var(--ink)}
-.dlg .dbtn{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+.dlg .dbtn{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:4px}
 #foldersPop{position:fixed;top:58px;right:14px;z-index:40;width:min(var(--pop-w-m),calc(100vw - 32px));max-height:min(70vh,520px);overflow-y:auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:0 14px 40px rgba(40,35,25,.2);padding:var(--pop-pad)}
 #foldersPop[hidden]{display:none}
 /* floors (spec 033): panel like the folders popover; floor tag in room headers */
@@ -2017,7 +2020,6 @@ h2,h3,h4{text-wrap:balance}
 /* FR-167: dialog sizes S (default), M and L; `.wide` and `.imp` are older names for M and L */
 .dlg.m{width:min(var(--dlg-w-m),calc(100vw - 32px))}
 .dlg.l{width:min(var(--dlg-w-l),calc(100vw - 32px))}
-.dlg.l .dbtn{flex-wrap:wrap} /* spec 093: the + Folder choice has five buttons; at 1440 and 1280 they wrap to a second row instead of pushing the first one out on the left */
 .sched-dlg .sc-form{display:flex;flex-direction:column;gap:var(--dlg-gap)} /* FR-167: groups of fields are one gap apart (the Prompt label touched the select above it) */
 
 /* spec 001 FR-051..FR-055: finished agents rest in a lounge corner at the end of the desk row, at the row's height: a couch (recent) and
@@ -2235,6 +2237,7 @@ h2,h3,h4{text-wrap:balance}
 .modeic.mode-autopilot{color:var(--red-ink)}
 .mode-menu .mm-autopilot .mi{color:var(--red-ink)}
 .mm-autopilot{border-top:1px solid var(--line)}
+.mm-assisted{border-top:1px solid var(--line)} /* spec 003 FR-120: the reviewer switch under the modes */
 .ap-noatt{display:inline-grid;place-items:center;opacity:.4;cursor:help}
 .note.ap-line{font-size:var(--t4-size);color:var(--ink-2);background:none;border:0;padding:0;box-shadow:none}
 .note.ap-end{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s-1);border-left:3px solid var(--tone-info-line)}

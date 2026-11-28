@@ -11,17 +11,21 @@
 const CONTROL = new RegExp('[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029\\u200b-\\u200f\\u202a-\\u202e\\u2066-\\u2069\\ufeff]', 'g');
 const NAMED = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
 
-/** One line of text, safe to print: controls escaped (`\n`, `\u001b`), `::` written as `: :`, `##[` as `# #[`. */
-function printable(text) {
+/** One line of text, safe to print: controls escaped (`\n`, `\u001b`), `::` written as `: :`, `##[` as `# #[`. `keepTab` leaves a tab as it is (a code block in a body). */
+function printable(text, keepTab = false) {
   return String(text)
-    .replace(CONTROL, (c) => NAMED[c] || `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
+    .replace(CONTROL, (c) => (keepTab && c === '\t' ? c : NAMED[c]) || `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`)
     .replace(/:(?=:)/g, ': ')
     .replace(/#(?=#(?:vso)?\[)/g, '# '); // legacy `##[error]`, `##[add-mask]`, `##[set-output ...]` (and `##vso[...]`), read anywhere in a line
 }
 
 /** Print text line by line; each line is made printable again, so even an unescaped fragment cannot start a workflow command. */
-function emit(text, write = console.log) {
-  for (const line of String(text).split(/\r?\n/)) write(printable(line));
+function emit(text, write = console.log, keepTab = false) {
+  for (const line of String(text).split(/\r?\n/)) write(printable(line, keepTab));
 }
 
 module.exports = { printable, emit };
+
+// FR-426: `node scripts/safe-print.js` prints its standard input through `emit` (scripts/gh-trusted.sh --list pipes its rows here)
+// FR-428: `--text` also keeps tabs (the read mode and --pr-text print trusted Markdown through it)
+if (require.main === module) emit(require('fs').readFileSync(0, 'utf8').replace(/\r?\n$/, ''), console.log, process.argv[2] === '--text');
