@@ -43,7 +43,7 @@ import { register as registerNotesIpc } from './ipc/notes';
 import { register as registerTeamsIpc } from './ipc/teams';
 import { register as registerMemoryIpc } from './ipc/memory';
 import { defaultProfileEnv } from './profilefiles';
-import { MemoryOps, nodeMemoryCtx, collectOfficeFolders, cappedWorkspaceReader } from './memoryops';
+import { MemoryOps, OfficeMap, nodeMemoryCtx, collectOfficeFolders, cappedWorkspaceReader } from './memoryops';
 import { memoryGitRemote, memoryGitFlags } from './memorygit';
 import { pickFolder } from './pickfolder';
 import { TeamsIpcOps } from './teamsipc';
@@ -230,7 +230,7 @@ router.setEventGuard(eventShape); // spec 010 FR-035: every event checked before
 const orgPolicies = new OrgPolicyCache({ ids: () => registry.list().map((d) => d.id), adapter: (id) => (registry.has(id) ? router.instance(id) : undefined) });
 /** Spec 076 FR-203: the start guard's deps; advice is shown once the session has started (a toast in the window). */
 const orgGuard: StartGuardDeps = { refusal: (id, ask) => orgPolicies.refusal(id, ask), advice: (id, ask) => orgPolicies.advice(id, ask), onNote: (text, id) => toRenderer('agents:orgNote', { id, text }) };
-const agents = new Map<string, AgentInfo>();
+const agents = new OfficeMap<string, AgentInfo>(() => getMemoryOps()?.recheck()); // spec 116 T008: the one hook for "an office folder was added or removed"
 /** Spec 069: the agent apps' own user-level MCP lists (read live; written only after the window's per-file confirmation). */
 const globalLists = new GlobalLists(() => globalFiles({ CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR, CODEX_HOME: process.env.CODEX_HOME, ...dev }, os.homedir()));
 const appIdOf = (id: string): string | undefined => router.adapterIdOf(id) ?? agents.get(id)?.adapterId;

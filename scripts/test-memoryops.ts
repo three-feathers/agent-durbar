@@ -19,7 +19,7 @@ import type { MemoryFlavor, RemoteAnswer } from '../src/shared/memoryfolder';
 const MODNAME = process.env.MEMORYOPS_MODULE ?? 'memoryops';
 const IS_COPY = process.env.MEMORYOPS_MODULE !== undefined;
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { MemoryOps, nodeMemoryCtx, expandOfficeFolders, collectOfficeFolders, cappedWorkspaceReader, MAX_WORKSPACE_BYTES, TOKEN_MS } = require('../src/main/' + MODNAME) as typeof import('../src/main/memoryops');
+const { MemoryOps, OfficeMap, nodeMemoryCtx, expandOfficeFolders, collectOfficeFolders, cappedWorkspaceReader, MAX_WORKSPACE_BYTES, TOKEN_MS } = require('../src/main/' + MODNAME) as typeof import('../src/main/memoryops');
 
 let n = 0;
 const eq = <T>(a: T, b: T, m: string): void => { n++; assert.deepStrictEqual(a, b, m); };
@@ -480,6 +480,112 @@ section('seton', () => {
   eq(s.ops.setOn(true), { ok: false, error: 'failed' }, 'a save that fails says failed');
 });
 
+// ---------------------------------------------------------------------------------------------------------------------------------- officeadd
+section('officeadd', async () => {
+  // T008: the office is an OfficeMap; adding a folder re-checks the memory folder (FR-004 rule 4)
+  const mk = () => {
+    const s = setup();
+    const agents = new OfficeMap<string, string>(() => s.ops.recheck());
+    const add = (id: string, folder: string): void => { s.office.push(folder); agents.set(id, folder); };
+    s.store.folder = NOTES; s.store.on = true;
+    return { s, agents, add };
+  };
+  for (const [what, folder] of [['inside the memory folder', NOTES + '/sub'], ['around the memory folder', '/home/ana']] as const) {
+    const { s, agents, add } = mk();
+    eq(s.ops.status().state, 'on', what + ': on first');
+    eq(named('readRoots before', () => s.ops.readRoots()), [NOTES], what + ': root before');
+    const pushed = s.changed.length;
+    add('a1', folder);
+    eq(agents.get('a1'), folder, what + ': the folder is still added');
+    eq(s.changed.length - pushed, 1, what + ': memory:changed pushed exactly once');
+    const st = s.ops.status();
+    eq(st.state, 'refused', what + ': state refused');
+    ok(st.state === 'refused' && (st.reason ?? '').endsWith('The folder: ' + folder.replace('/home/ana/', '~/')), what + ': the reason names the folder');
+    eq(s.ops.readRoots(), [], what + ': new sessions get no root');
+    eq(s.store.on, true, what + ': nothing stored: on stays as set');
+    eq(s.store.writes.length, 0, what + ': no setting was written');
+    add('a2', '/work/example.invalid/other');
+    eq(s.changed.length - pushed, 1, what + ': a second add changing nothing pushes nothing');
+    // the clash goes away: the memory comes back, once
+    s.office.length = 0; s.office.push('/work/example.invalid/other');
+    agents.delete('a1');
+    eq(s.changed.length - pushed, 2, what + ': the clash gone is pushed once');
+    eq(s.ops.status().state, 'on', what + ': on again');
+  }
+  { // an unrelated folder: no change, no push
+    const { s, agents, add } = mk();
+    s.ops.status();
+    const pushed = s.changed.length;
+    add('a1', '/work/example.invalid/proj');
+    eq(agents.has('a1'), true, 'unrelated: added');
+    eq(s.changed.length, pushed, 'unrelated: no push');
+    eq(s.ops.readRoots(), [NOTES], 'unrelated: root kept');
+  }
+  { // no baseline (the window never read it): a clean add pushes nothing, a clash pushes
+    const { s, add } = mk();
+    add('a1', '/work/example.invalid/proj');
+    eq(s.changed.length, 0, 'no baseline, clean: no push');
+    add('a2', NOTES);
+    eq(s.changed.length, 1, 'no baseline, clash: pushed');
+  }
+  { // memory off or unlinked: nothing to turn off, no folder looked at
+    const { s, add } = mk();
+    s.store.on = false;
+    const log = s.fsx.log.length;
+    add('a1', NOTES);
+    eq(s.changed.length, 0, 'off: no push');
+    eq(s.fsx.log.length, log, 'off: the folder is not looked at (FR-001)');
+    s.store.folder = undefined;
+    add('a2', NOTES);
+    eq(s.changed.length, 0, 'unlinked: no push');
+  }
+  { // an unreadable workspace file added to the office refuses and is named
+    const { s, add } = mk();
+    s.ops.status();
+    s.ws['/work/example.invalid/x.code-workspace'] = 'unreadable';
+    add('a1', '/work/example.invalid/x.code-workspace');
+    const st = s.ops.status();
+    eq(st.state, 'refused', 'unreadable workspace: refused');
+    ok(st.state === 'refused' && (st.reason ?? '').includes('x.code-workspace'), 'unreadable workspace: named');
+  }
+  { // a throwing onChange or recheck never breaks the add
+    const m = new OfficeMap<string, string>(() => { throw new Error('boom'); });
+    m.set('a', 'b');
+    eq(m.get('a'), 'b', 'a throwing hook still adds');
+    const none = new MemoryOps({ store: () => { throw new Error('x'); }, flavor: POSIX, pick: async () => null, ctx: () => nodeMemoryCtx(fakeFs(), { home: '/h', userData: '/u' }), officeFolders: () => [] });
+    none.recheck();
+    ok(true, 'recheck never throws');
+  }
+  { // race: a folder added while the pick dialog is open; apply re-checks and refuses
+    const { s, add } = mk();
+    s.store.folder = undefined; s.store.on = false;
+    s.picks.push(NOTES);
+    const p = await s.ops.pick();
+    ok(p.ok, 'pick ok');
+    add('a1', NOTES + '/sub');
+    const r = s.ops.apply(p.ok ? p.token : '');
+    eq(r.ok, false, 'a folder added after the pick refuses the apply');
+    eq(s.store.writes.length, 0, 'nothing saved');
+  }
+  { // race: stop / setOn between rechecks are synchronous and leave one coherent state
+    const { s, add } = mk();
+    s.ops.status();
+    add('a1', NOTES + '/sub');
+    eq(s.ops.status().state, 'refused', 'refused');
+    eq(s.ops.setOn(true).ok, false, 'turning on while the clash lasts is refused');
+    eq(s.ops.setOn(false).ok, true, 'turning off');
+    const pushed = s.changed.length;
+    add('a2', '/work/example.invalid/p2');
+    eq(s.changed.length, pushed, 'off: later adds push nothing');
+    eq(s.ops.stop().ok, true, 'stop');
+    add('a3', NOTES);
+    eq(s.ops.status().state, 'off', 'unlinked stays off');
+  }
+  // main.ts uses the one hook
+  const main = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'main', 'main.ts'), 'utf8');
+  ok(/const agents = new OfficeMap<string, AgentInfo>\(\(\) => getMemoryOps\(\)\?\.recheck\(\)\)/.test(main), 'main.ts: the agents map is the OfficeMap that re-checks');
+});
+
 // ---------------------------------------------------------------------------------------------------------------------------------- stop
 section('stop', async () => {
   const s = setup();
@@ -606,6 +712,10 @@ section('source', () => {
     { name: 'status looks at the folder while off', from: "if (!st.memoryOn)\n            return { on: false, path, state: 'off', keepInGit };", to: '', section: 'status' },
     { name: 'setOn(true) does not re-check', from: 'if (v) {\n            const folder = st.memoryFolder;', to: 'if (false) {\n            const folder = st.memoryFolder;', section: 'recheck' },
     { name: 'stop checks the folder', from: '        const saved = st.setMemory(undefined);', to: '        this.deps.ctx().lstat("/x");\n        const saved = st.setMemory(undefined);', section: 'stop' },
+    // T008
+    { name: 'the re-check is skipped when an office folder is added', from: 'set(k, v) { super.set(k, v); this.notify();', to: 'set(k, v) { super.set(k, v);', section: 'officeadd' },
+    { name: 'memory:changed is not pushed by the re-check', from: '            this.seen = key;\n            this.deps.changed?.();', to: '            this.seen = key;', section: 'officeadd' },
+    { name: 'the added folder is refused instead of added', from: 'set(k, v) { super.set(k, v); this.notify();', to: 'set(k, v) { this.notify();', section: 'officeadd' },
     { name: 'stop leaves a pending token', from: '        this.live = undefined;\n        this.gen++;', to: '        this.gen++;', section: 'stop' },
   ];
   const lf = orig.replace(/\r\n/g, '\n');
