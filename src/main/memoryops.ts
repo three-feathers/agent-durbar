@@ -182,7 +182,8 @@ export class MemoryOps {
     const folder = st?.memoryFolder;
     const keepInGit = st?.memoryKeepInGit === true;
     if (!st || folder === undefined) return { on: false, state: 'off', keepInGit };
-    const path = this.shown(folder);
+    let path: string;
+    try { path = this.shown(folder); } catch { path = folder; } // a throwing `ctx()` must not escape: the status says it could not be checked (T008 round 3)
     if (!st.memoryOn) return { on: false, path, state: 'off', keepInGit }; // off: the folder is not looked at (FR-001)
     let r;
     try { r = this.check(folder); } catch { return { on: false, path, state: 'refused', reason: 'It could not be checked.', keepInGit }; }

@@ -60,7 +60,7 @@ class FakeStore {
   setMemory(f: string | undefined) { if (this.failSave) return false; this.writes.push(f); this.folder = f; this.on = f !== undefined; return true; }
   setMemoryOn(v: unknown) { if (typeof v !== 'boolean' || this.failSave) return false; this.on = v; return true; }
 }
-interface Setup { ws: Record<string, string[] | 'unreadable'>; remoteCalls: string[]; remoteAnswer: RemoteAnswer; ops: InstanceType<typeof MemoryOps>; store: FakeStore; fsx: ReturnType<typeof fakeFs>; office: string[]; clock: { t: number }; picks: Array<string | null>; changed: number[] }
+interface Setup { ws: Record<string, string[] | 'unreadable'>; remoteCalls: string[]; remoteAnswer: RemoteAnswer; ops: InstanceType<typeof MemoryOps>; store: FakeStore; fsx: ReturnType<typeof fakeFs>; office: string[]; boom: { ctxThrows: boolean }; clock: { t: number }; picks: Array<string | null>; changed: number[] }
 function setup(flavor: MemoryFlavor = POSIX, o: { fsOpts?: Parameters<typeof fakeFs>[0] } = {}): Setup {
   const fsx = fakeFs(o.fsOpts);
   const store = new FakeStore();
@@ -70,19 +70,19 @@ function setup(flavor: MemoryFlavor = POSIX, o: { fsOpts?: Parameters<typeof fak
   const changed: number[] = [];
   const ws: Record<string, string[] | 'unreadable'> = {};
   const remoteCalls: string[] = [];
-  const out = { remoteAnswer: { kind: 'none' } as RemoteAnswer };
+  const out = { remoteAnswer: { kind: 'none' } as RemoteAnswer, ctxThrows: false };
   let k = 0;
   const base = { home: flavor === POSIX ? '/home/ana' : 'C:\\Users\\ana', userData: flavor === POSIX ? '/home/ana/.config/durbar-x' : 'C:\\Users\\ana\\AppData\\Roaming\\durbar-x' };
   const ops = new MemoryOps({
     store: () => store, flavor, now: () => clock.t,
     pick: async () => (picks.length ? picks.shift()! : null),
-    ctx: () => nodeMemoryCtx(fsx, base),
+    ctx: () => { if (out.ctxThrows) throw new Error('ctx boom'); return nodeMemoryCtx(fsx, base); },
     officeFolders: () => expandOfficeFolders(office, (f) => { const m = ws[f]; if (!Array.isArray(m)) throw new Error('unreadable'); return m; }),
     remote: (real) => { remoteCalls.push(real); return out.remoteAnswer; },
     changed: () => changed.push(1),
     newToken: () => 'ab' + (++k).toString(16).padStart(30, '0'),
   });
-  return { ws, remoteCalls, get remoteAnswer() { return out.remoteAnswer; }, set remoteAnswer(v: RemoteAnswer) { out.remoteAnswer = v; }, ops, store, fsx, office, clock, picks, changed };
+  return { ws, remoteCalls, get remoteAnswer() { return out.remoteAnswer; }, set remoteAnswer(v: RemoteAnswer) { out.remoteAnswer = v; }, ops, store, fsx, office, boom: out, clock, picks, changed };
 }
 const NOTES = '/home/ana/notes';
 
@@ -553,6 +553,22 @@ section('officeadd', async () => {
     eq(st.state, 'refused', 'unreadable workspace: refused');
     ok(st.state === 'refused' && (st.reason ?? '').includes('x.code-workspace'), 'unreadable workspace: named');
   }
+  { // T008 round 3: a throwing ctx() during the re-check is told, once, as refused (never a stale "On")
+    const { s, add } = mk();
+    eq(s.ops.status().state, 'on', 'ctx throw: on first');
+    const pushed = s.changed.length;
+    s.boom.ctxThrows = true;
+    add('a1', '/work/example.invalid/proj');
+    eq(s.changed.length - pushed, 1, 'ctx throw: pushed once');
+    add('a2', '/work/example.invalid/proj2');
+    eq(s.changed.length - pushed, 1, 'ctx throw: not pushed again while it lasts');
+    const st = s.ops.status();
+    ok(st.state === 'refused' && st.reason === 'It could not be checked.', 'ctx throw: refused, "It could not be checked."');
+    s.boom.ctxThrows = false;
+    add('a3', '/work/example.invalid/proj3');
+    eq(s.changed.length - pushed, 2, 'ctx throw: back on is pushed');
+    eq(s.ops.status().state, 'on', 'ctx throw: on again');
+  }
   { // a throwing onChange or recheck never breaks the add
     const m = new OfficeMap<string, string>(() => { throw new Error('boom'); });
     m.set('a', 'b');
@@ -783,6 +799,7 @@ section('source', () => {
     { name: 'the re-check is skipped when an office folder is added', from: 'set(k, v) { super.set(k, v); this.notify();', to: 'set(k, v) { super.set(k, v);', section: 'officeadd' },
     { name: 'memory:changed is not pushed by the re-check', from: '            this.seen = key;\n            this.deps.changed?.();', to: '            this.seen = key;', section: 'officeadd' },
     { name: 'the added folder is refused instead of added', from: 'set(k, v) { super.set(k, v); this.notify();', to: 'set(k, v) { this.notify();', section: 'officeadd' },
+    { name: 're-check ignores a thrown error', from: 'try {\n            path = this.shown(folder);\n        }\n        catch {\n            path = folder;\n        }', to: 'path = this.shown(folder);', section: 'officeadd' },
     { name: 'clear() does not notify', from: 'clear() { const n = this.size; super.clear(); if (n > 0)\n        this.notify(); }', to: 'clear() { super.clear(); }', section: 'officeadd' },
     { name: 'the saved list hook is dropped from remove', from: '        this.save();\n        this.listChanged();\n        return true;', to: '        this.save();\n        return true;', section: 'officeadd', file: 'folders' },
     { name: 'the saved list hook is dropped from the team rollback', from: 'if (this.folders !== before.folders)\n                this.listChanged();', to: '', section: 'officeadd', file: 'folders' },
