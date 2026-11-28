@@ -23,12 +23,15 @@
  * Issue #2093 (spec 001 FR-270): after the Tab to a room head the tip shows; a window blur hides it and a window focus brings it back (the keyboard still on the head); nothing focused shows none. A failure of the tip step prints
  *   the window's focus state and, when the window lost the OS focus, says so. Mutant (edit src/renderer/tooltip.js, `npm run build`, run, `git checkout -- src`): drop its `window.addEventListener('focus',` line => "the tip comes back when the window gets its focus back".
  * Screenshots: 092-lift-{one,all,hint-one,hint-all}-<w>x<h>.png
+ *
+ * Developer aids (issue 2167): LIFT_BLUR=0 turns off the blur before the room-head tip step; LIFT_MUTANT=nofocus does not ask for the focus after it (must fail at the tip assert).
  */
 const path = require('path');
 const assert = require('assert');
 const { helpers, jsLiteral } = require('./driver-helpers');
 const OUT = process.env.OUT || '/tmp';
 const SIZES = [[1440, 900], [1280, 800]];
+const BLUR_TIP = process.env.LIFT_BLUR !== '0'; /* issue 2167: the Windows condition (a window without the OS focus) before the room-head tip step, forced on every machine */
 
 const dragFocus = require('./drag-focus'); // the focus recorder and its label (spec 097 FR-352, issue 1550), reused for the tip step (issue 2093)
 module.exports = async (ctx) => {
@@ -96,6 +99,9 @@ module.exports = async (ctx) => {
     const st = await js(`(()=>{const t=document.getElementById('appTip'),d=document.activeElement;return {tip:t&&!t.hidden?t.textContent:'',room:!!(d.closest('.room')&&d.closest('.room').getAttribute('aria-describedby')),floor:document.getElementById('floor').getAttribute('aria-describedby')||''};})()`);
     assert.ok(!NOT_HINT.test(st.tip), `${tag}: keyboard focus on a desk shows no floor hint (got ${JSON.stringify(st.tip)})`);
     assert.ok(!st.room && !st.floor, `${tag}: no aria-describedby on the room or the floor: ${JSON.stringify(st)}`);
+    /* issue 2167: on a Windows shard three drivers share one desktop and a neighbour's window takes the OS focus, so the Tab to the head fires no focusin and its tip does not show. The window is blurred on purpose here (LIFT_BLUR=0 turns that off), the page is asserted to report no focus (the setup is valid; on Windows only, where a window keeps the focus on blur(), H.forceBlur prints a skip line instead and the step goes on), and the driver asks for the real focus by state (needFocus), not the emulation (it would keep the page "focused"). The blur and focus the driver made itself are dropped from the recorder, so a later failure names only a loss it did not cause. LIFT_MUTANT=nofocus skips the ask: it must die at the tip assert. */
+    if (BLUR_TIP) await H.forceBlur('shots-092-lift', tag, 'room-head tip step'); /* H.forceBlur: ends any emulation, blurs, waits for no focus; fails named on Linux and macOS, prints a skip line on Windows (it keeps the focus on blur()) and the step goes on */
+    if (process.env.LIFT_MUTANT !== 'nofocus') { await H.needFocus(tag + ': before the room-head tip step'); await js('window.__dragFocusLog.length=0'); }
     assert.ok(await tabTo('#stage .room-head button'), `${tag}: Tab reaches a button of a room head`);
     await settle();
     const READ = `(()=>{const t=document.getElementById('appTip'),d=document.activeElement,h=d.closest('.room-head');return {tip:t&&!t.hidden?t.textContent:'',want:h?h.dataset.tip:'',hasFocus:document.hasFocus(),ae:d.tagName+'.'+d.className,tipHidden:t?t.hidden:null,events:window.__dragFocusLog||[]};})()`;

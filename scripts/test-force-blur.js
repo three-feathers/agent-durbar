@@ -65,7 +65,7 @@ function scan(name, src) { /* the forceBlur call is its own statement (never ret
   const L = src.split(/\r?\n/);
   const i = L.findIndex((l) => /H\.forceBlur\(/.test(l));
   assert.ok(i >= 0, `${name}: calls H.forceBlur`);
-  assert.ok(/^\s*if \((BLUR|BLUR_RING)\) await H\.forceBlur\(/.test(L[i]), `${name}: a refused blur does not end the step early (the call is a plain awaited statement)`);
+  assert.ok(/^\s*if \((BLUR|BLUR_RING|BLUR_TIP)\) await H\.forceBlur\(/.test(L[i]), `${name}: a refused blur does not end the step early (the call is a plain awaited statement)`);
   assert.ok(/H\.needFocus\(/.test(L[i + 1]) || /H\.needFocus\(/.test(L[i + 2]), `${name}: the focus is still asked for by state after the forced blur`);
 }
 
@@ -82,11 +82,11 @@ function scan(name, src) { /* the forceBlur call is its own statement (never ret
     const src = mutate(name, real.replace(/\r?\n/g, '\r\n'), re, to);
     await assert.rejects(() => battery(load(src)), (e) => died.test(e.message), `mutant "${name}" must die at a named assert`);
   }
-  for (const f of ['check-102-arcade-labels.js', 'shots-097-moments.js', 'check-brain-dock.js', 'check-status-tooltip.js']) {
+  for (const f of ['check-102-arcade-labels.js', 'shots-097-moments.js', 'check-brain-dock.js', 'check-status-tooltip.js', 'shots-092-lift.js']) {
     const src = fs.readFileSync(path.join(__dirname, f), 'utf8');
     scan(f, src);
     scan(f + ' (CRLF)', src.replace(/\r?\n/g, '\r\n'));
-    const mut = mutate('early return on a refused blur: ' + f, src, /if \((BLUR|BLUR_RING)\) await H\.forceBlur\(([^\r\n]*?)\); \/\*/, 'if ($1) { if (!(await H.forceBlur($2))) return; } /*');
+    const mut = mutate('early return on a refused blur: ' + f, src, /if \((BLUR|BLUR_RING|BLUR_TIP)\) await H\.forceBlur\(([^\r\n]*?)\); \/\*/, 'if ($1) { if (!(await H.forceBlur($2))) return; } /*');
     assert.throws(() => scan(f + ' mutant', mut), /does not end the step early/, `mutant: an early return on a refused blur dies in ${f}`);
   }
   console.log('test-force-blur: ok');
