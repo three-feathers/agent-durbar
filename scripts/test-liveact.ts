@@ -1034,4 +1034,14 @@ for (const st of ['idle', 'needs-permission', 'error', 'stopped']) {
   const g = L.create({ mask }) as unknown as { block(raw: string, k?: string): { t: string }[] };
   eq(all(g.block('see /x done.', 'reply')), 'see /x done.', '#1320 monitor: no home mask, the text as masked');
 }
+// spec 012 FR-470 (issue #2113): the desk readout and the monitor show a network path with both lead separators. UNC strings are data only.
+{
+  const bs = '\\';
+  const unc = bs + bs + 'srv01' + bs + 'share' + bs + 'a.txt';
+  const g = L.create({ mask }) as unknown as Feed & { block(raw: string, k?: string): { t: string }[] };
+  eq(g.block('see ' + unc + ' done.', 'reply').map((l) => l.t).join('\n'), 'see ' + unc + ' done.', '#2113 monitor: a network path keeps both lead separators');
+  const f = mk();
+  f.onEvent('a', ev({ type: 'thinking', reasoningId: 'r1', delta: 'Reading ' + unc + ' now. ' }));
+  eq(f.of('a')!.text, 'Thinking: Reading ' + unc + ' now.', '#2113 desk readout: a network path keeps both lead separators');
+}
 console.log(`liveact: ${n} checks passed`);

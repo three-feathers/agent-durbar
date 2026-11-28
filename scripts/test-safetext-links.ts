@@ -209,7 +209,9 @@ if (!LABELS) {
       continue;
     }
     lnk++;
-    const pieceCheck = (h: string, r: string, what: string): void => { const shown = r.split(cutAt).join('\u0000'); for (const p of h.split(cutAt)) assert.ok(p === '' || shown.includes(p), `#1940 differential: ${what} shows nothing main hides: ${where}: ${JSON.stringify(p)}`); };
+    // spec 012 FR-470: main's copy loses one separator of a network path's lead; the piece is also read with that one change undone
+    const oneLead = (p: string): string => p.replace(/(?<![^\s"'`(\[<=:,;|>])\\\\(?=[A-Za-z0-9.?]|[^\x00-\x7f]|$)/g, '\\');
+    const pieceCheck = (h: string, r: string, what: string): void => { const shown = r.split(cutAt).join('\u0000'); for (const p of h.split(cutAt)) assert.ok(p === '' || shown.includes(p) || shown.includes(oneLead(p)), `#1940 differential: ${what} shows nothing main hides: ${where}: ${JSON.stringify(p)}`); };
     // the wrapper's mask is maskRaw with the same redact (one code path), so maskRaw stands for both; the wrapper excerpt is the excerpt with the code word
     // where main gives nothing (fails closed), the head gives nothing too (review of PR 1949, F1); the labels too
     const pc = (h: string, r: string, what: string): void => { if (r === '') eq(h, '', `#1940 differential: ${what} fails closed where main does: ${where}`); else pieceCheck(h, r, what); };

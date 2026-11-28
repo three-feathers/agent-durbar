@@ -355,8 +355,8 @@ console.log(`test-helpercard: repaint ratio ${ratio.toFixed(2)} (big ${big.toFix
   eq(helperMask('/Users/zedq/proj/a.txt'), '~/proj/a.txt', 'a home folder becomes ~');
   eq(helperMask('\\\\fs01\\homes\\zedq\\notes'), '~\\notes', 'a UNC home becomes ~');
   for (const t of ['Fix the build', 'Look around and report', 'Count files in src/renderer (about 120)', '']) eq(helperMask(t), t, 'ordinary text is unchanged: ' + JSON.stringify(t));
-  // the order is the point: the desk mask first unescapes `\\` and the UNC home is no longer seen
-  ok(shared.maskHomePaths(S.mask('\\\\fs01\\homes\\zedq\\notes')).includes('zedq'), 'the wrong order (desk mask first) would leak, so the order test bites');
+  // spec 012 FR-470 (issue #2113): the desk mask keeps the doubled lead of a network path, so the home mask reads the home folder whichever mask runs first (before it, the desk mask came first and the home folder was no longer seen)
+  ok(!shared.maskHomePaths(S.mask('\\\\fs01\\homes\\zedq\\notes')).includes('zedq'), 'the UNC home is hidden even when the desk mask runs first');
   // fail closed: no redact module keeps no agent text; a throwing or odd home mask gives ''
   eq(make({}).helperMask('x ' + tok), S.mask('x ' + tok), 'no DurbarRedact: the desk mask alone');
   eq(make({ DurbarRedact: { maskHomePaths: () => 7 } }).homeMask('/Users/zedq'), '', 'a home mask that gives no string gives ""');
@@ -372,5 +372,13 @@ console.log(`test-helpercard: repaint ratio ${ratio.toFixed(2)} (big ${big.toFix
     [/excerpt:\(t,n,fb\)=>safeExcerpt\(homeMask\(t\),n,fb\),mask:t=>helperMask\(t\)/, 'the expanded helper card'],
   ] as [RegExp, string][]) ok(re.test(app), what);
   ok(!/s\.name=safeMask\(/.test(app), 'no helper name is stored with the desk mask alone');
+}
+// spec 012 FR-470 (issue #2113): a card line shows a network path with both lead separators (the card reads its fields through the one safetext path). UNC strings are data only.
+{
+  const bs = '\\';
+  const unc = bs + bs + 'srv01' + bs + 'share' + bs + 'a.txt';
+  const v = C.view(helper({ task: 'Read ' + unc, result: 'Wrote ' + unc + ' ok.' }, 'done'), 1);
+  eq(textOf(v, 'result'), 'Wrote ' + unc + ' ok.', '#2113 helper card result: a network path keeps both lead separators');
+  eq(textOf(C.view(helper({ task: 'Read ' + unc, now: null }), 1), 'task'), 'Read ' + unc, '#2113 helper card task: a network path keeps both lead separators');
 }
 console.log(`test-helpercard: ok (${n} checks)`);

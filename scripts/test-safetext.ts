@@ -259,6 +259,8 @@ eq(T.ready, true, 'redact: ready');
   const refText = fs.readFileSync(refFile, 'utf8').replace(/\r\n/g, '\n');
   eq(crypto.createHash('sha256').update(refText, 'utf8').digest('hex'), '4a1856a6ff14310d9354e7c2e3cae0f1aa6eef742f75c73330c9d46e79191a27', '#1593 differential: the frozen copy is unchanged');
   ok(!refText.includes('BOTH_WORK'), '#1593 differential: the frozen copy is not the head');
+  // spec 012 FR-470: main's copy loses one separator of a network path's lead; a piece of the head's output is read with that one change undone (the only difference allowed)
+  const oneLead = (p: string): string => p.replace(/(?<![^\s"'`(\[<=:,;|>])\\\\(?=[A-Za-z0-9.?]|[^\x00-\x7f]|$)/g, '\\');
   const R0 = require(refFile) as typeof S & { useShared(m: unknown): boolean; create: typeof S.create };
   R0.useShared(require('../src/shared/redact'));
   const RT = R0.create({ redact: red, cut: cutText });
@@ -291,7 +293,7 @@ eq(T.ready, true, 'redact: ready');
       differs = true;
       const cutAt = /\s+|\[redacted(?::[^\]\r\n]{1,128})?\]/;
       const shown = r.split(cutAt).join('\u0000');
-      for (const p of h.split(cutAt)) assert.ok(p === '' || shown.includes(p), `#1593 differential (FR-184): ${what} shows nothing main hides: ${where}: ${JSON.stringify(p)}`);
+      for (const p of h.split(cutAt)) assert.ok(p === '' || shown.includes(p) || shown.includes(oneLead(p)), `#1593 differential (FR-184): ${what} shows nothing main hides: ${where}: ${JSON.stringify(p)}`);
     };
     // main's reading: the frozen window with the shared masks' shell readings off (with them off the shared masks are byte for byte main's); spec 012 FR-185: also with
     // the GitHub last pass off inside, then that pass once over the result, as the window does it (`maskLoose` only adds masks)
@@ -325,7 +327,7 @@ eq(T.ready, true, 'redact: ready');
       const on = withoutLinkSplit(f), off = run(f);
       if (on === off || on === closed) continue;
       const cutAt = /\s+|\[redacted(?::[^\]\r\n]{1,128})?\]/, shown = off.split(cutAt).join('\u0000');
-      for (const p of on.split(cutAt)) assert.ok(p === '' || shown.includes(p), `#1320 continuation differential: ${what} shows nothing the reading without the step hides: ${where}: ${JSON.stringify(p)}`);
+      for (const p of on.split(cutAt)) assert.ok(p === '' || shown.includes(p) || shown.includes(oneLead(p)), `#1320 continuation differential: ${what} shows nothing the reading without the step hides: ${where}: ${JSON.stringify(p)}`);
     }
     if (differs) { cont++; continue; }
     if (loose) { l185++; continue; }
@@ -334,5 +336,24 @@ eq(T.ready, true, 'redact: ready');
   ok(same + l185 >= 1500 && same + cont + l185 >= 2000 + shapes.length, `#1593 differential: ${same} texts byte-identical, ${l185} more whose excerpt FR-185 changed (byte-identical with its pass off), ${cont} more changed by FR-184 that show nothing main hides (FR-189's link step off)`);
   // over the budget the head shows nothing where main showed a masked text (the intended change)
   ok(R0.maskRaw(over, red).length > 0 && S.maskRaw(over, red) === '', '#1593 over the budget: main showed a masked text, the head shows nothing');
+}
+// spec 012 FR-470 (issue #2113): a network path keeps both lead separators through the Markdown reading; every other escape is undone as before. UNC strings are data only.
+{
+  const red = (s: string): string => redact(s, {});
+  const bs = '\\';
+  const unc = bs + bs + 'srv01' + bs + 'share' + bs + 'a.txt';
+  for (const [what, t] of [['at the start', unc + ' is open'], ['after a blank', 'open ' + unc + ' now'], ['in quotes', 'open "' + unc + '"'], ['in brackets', 'open (' + unc + ')'], ['after a colon', 'path:' + unc]] as Array<[string, string]>) {
+    ok(S.unesc(t) === t, `#2113 unesc keeps the lead of a network path ${what}: ${S.unesc(t)}`);
+    ok(S.maskRaw(t, red) === t, `#2113 maskRaw shows a network path whole ${what}: ${S.maskRaw(t, red)}`);
+    ok(S.excerpt(t, red).includes(unc), `#2113 excerpt (helper cards, desk readout) shows a network path whole ${what}: ${S.excerpt(t, red)}`);
+  }
+  ok(S.unesc(bs + bs + '?' + bs + 'C:' + bs + 'x') === bs + bs + '?' + bs + 'C:' + bs + 'x', '#2113 a device path lead (two backslashes and a question mark) stays');
+  ok(S.unesc(bs + bs + '\u00dcnc' + bs + 'share') === bs + bs + '\u00dcnc' + bs + 'share', '#2113 a non-ASCII server name keeps the lead');
+  // the other escapes are undone as before
+  eq(S.unesc('ghp' + bs + '_x'), 'ghp_x', '#2113 an escaped underscore is still undone');
+  eq(S.unesc('a' + bs + bs + 'b'), 'a' + bs + 'b', '#2113 a doubled backslash inside a word is still one');
+  eq(S.unesc(bs.repeat(4) + 'x'), bs.repeat(2) + 'x', '#2113 four backslashes are still two');
+  eq(S.unesc(bs + bs + ' x'), bs + ' x', '#2113 a doubled backslash before a blank is still one');
+  eq(S.unesc(bs + '*x' + bs + '*'), '*x*', '#2113 escaped stars are still undone');
 }
 console.log(`safetext: ${n} checks passed`);

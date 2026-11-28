@@ -16,7 +16,9 @@
 })(typeof self!=='undefined'?self:this, function(CT,SHARED){
   'use strict';
   /* Markdown escapes undone before the first mask: `ghp\_...` must read as a token (the backslash would break the pattern) */
-  const unesc=t=>String(t==null?'':t).replace(/\\([\\`*_{}\[\]()#+\-.!~|<>])/g,'$1');
+  /* spec 012 FR-470 (issue #2113): `\\` is a Markdown escape, but a doubled backslash that starts a word and has a letter, a digit, `.`, `?` or a non-ASCII character after it (so no third backslash, no `$`, `_` or `*`) is the lead
+     of a Windows network path: it stays doubled, or every surface that reads through here (helper cards, desk readout, monitor) shows `\\srv\share` as `\srv\share` */
+  const unesc=t=>String(t==null?'':t).replace(/(?<![^\s"'`(\[<=:,;|>])\\\\(?=[A-Za-z0-9.?]|[^\x00-\x7f])|\\([\\`*_{}\[\]()#+\-.!~|<>])/g,(m,c)=>c===undefined?m:c);
   /* Markdown links `[text](target)` (an image `![text](target)` too) become their text, exactly as `/!?\[([^\]]*)\]\([^)]*\)/g` replaces them, in one scan: from a `[`, the next
      `]` must be followed by `(` and a later `)`; when it is not, no `[` before that `]` can start a link either, so the scan goes on after it; with no `)` left none can */
   const stripLinks=t=>{let out='',from=0,i=t.indexOf('[');while(i>=0){const j=t.indexOf(']',i+1);if(j<0)break;if(t[j+1]!=='('){i=t.indexOf('[',j+1);continue;}
