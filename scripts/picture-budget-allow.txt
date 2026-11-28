@@ -1,2 +1,4 @@
 # Pictures that may be over the picture budget (scripts/picture-budget.js). One line each: path | max KB | reason
 # A line needs a reason and a whole number of KB, and the file must exist. Empty on purpose: compress-shots fixes screenshots.
+docs/screenshots/116-note-preview-open-1440x900.png | 320 | Earlier commits of PR 2185 added 304 KB and 310 KB uncompressed versions; published history is never rewritten. The file in the tree is compressed (about 108 KB).
+docs/screenshots/116-note-real-preview-open-1440x900.png | 320 | An earlier commit of PR 2185 added a 313 KB uncompressed version; published history is never rewritten. The file in the tree is compressed (about 112 KB).

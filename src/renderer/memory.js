@@ -17,7 +17,7 @@
     intro:'A folder of your own notes that every agent can read. Durbar never runs git, pushes or pulls.',
   };
   /* T009 (FR-022): the two words of the memory note. The text itself is main's (`src/main/memorynote.ts`) and is shown exactly as it came, with textContent. */
-  const NOTE_WORDS={preview:'Sent with your next message: memory note',sent:'Memory note sent'};
+  const NOTE_WORDS={preview:'Sent with your next message: memory note',sent:'Memory note sent',lead:'This is what the agent reads first:'};
   const HOST_CUT=64;
 
   /* Text from main or from a folder's own name, made safe to show: the shared hidden-character definition (`unhide`, src/shared/redact.ts, passed in
@@ -151,21 +151,30 @@
     return {repaint:paint};
   }
 
-  /* T009: a closed <details> holding the exact text (textContent, never HTML). Returns the element. */
+  /* T009: text from main (the note, the path in it) made safe to show with the shared `unhide` (the T007 rule above): hidden and direction characters out, line
+     breaks kept (the note is several lines). FAILS CLOSED: no `unhide`, or one that throws, shows nothing. Returns null for nothing to show. */
+  function safeText(t){
+    let u=null;
+    try{u=X&&typeof X.unhide==='function'?X.unhide(String(t==null?'':t)):null;}catch(e){u=null;}
+    return typeof u==='string'&&u!==''?u:null;
+  }
+  /* T009: a closed <details> holding the exact text (textContent, never HTML), under a plain line that says what it is. Returns the element, or null. */
   function noteDetails(doc,summary,text,cls){
+    const t=safeText(text);if(t===null)return null;
     const d=doc.createElement('details');d.className=cls;
     const s=doc.createElement('summary');s.textContent=summary;
-    const pre=doc.createElement('pre');pre.className='mem-note-text';pre.textContent=String(text);
-    d.appendChild(s);d.appendChild(pre);return d;
+    const p=doc.createElement('p');p.className='mem-note-lead';p.textContent=NOTE_WORDS.lead;
+    const pre=doc.createElement('pre');pre.className='mem-note-text';pre.textContent=t;
+    d.appendChild(s);d.appendChild(p);d.appendChild(pre);return d;
   }
   /* T009 US1.2: the preview above the composer. `p` is main's {id,text} or anything else (nothing to send: the box is empty and hidden). Only under the simulator's gate. */
   function paintNotePreview(host,p){
     if(!host)return null;
     host.textContent='';
     const ok=shown()&&p&&typeof p==='object'&&typeof p.id==='string'&&typeof p.text==='string'&&p.text!=='';
-    if(!ok){host.hidden=true;delete host.dataset.noteId;return null;}
-    host.dataset.noteId=p.id;host.hidden=false;
-    host.appendChild(noteDetails(host.ownerDocument,NOTE_WORDS.preview,p.text,'mem-note-box'));
+    const d=ok?noteDetails(host.ownerDocument,NOTE_WORDS.preview,p.text,'nt-notice mem-note-box'):null;
+    if(!d){host.hidden=true;delete host.dataset.noteId;return null;}
+    host.dataset.noteId=p.id;host.hidden=false;host.appendChild(d);
     return p.id;
   }
   /* T009 US1.2: the line above the person's bubble; `text` is what main says it sent */
@@ -173,5 +182,10 @@
     if(!shown()||typeof text!=='string'||text==='')return null;
     return noteDetails(doc,NOTE_WORDS.sent,text,'note mem-note-sent');
   }
-  return {WORDS,NOTE_WORDS,paintNotePreview,sentLine,statusLine,remoteLine,confirmParts,failText,init,shown,mount};
+  /* T009: a chat reloaded from the agent app's history: the note's text is not kept (the app stores it, Durbar shows only that it went) */
+  function sentLineBare(doc){
+    if(!shown())return null;
+    const d=doc.createElement('div');d.className='note mem-note-sent bare';d.textContent=NOTE_WORDS.sent;return d;
+  }
+  return {WORDS,NOTE_WORDS,paintNotePreview,sentLine,sentLineBare,statusLine,remoteLine,confirmParts,failText,init,shown,mount};
 })());

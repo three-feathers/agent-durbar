@@ -19,3 +19,27 @@ export function noteClose(nonce: string): string { return `[End of memory note $
 export function noteBody(path: string, entry: string | undefined): string {
   return [`Memory folder: ${path}`, NOTE_SENTENCE, ...(entry ? [`Start with: ${entry}`] : [])].join('\n');
 }
+
+const HEAD_RE = /^\s*\[Memory note ([0-9a-f]{16,}) from Agent Durbar\./;
+export interface NoteSplit {
+  /** the person's own text with the note frame taken off */
+  text: string;
+  /** a whole frame was found and removed */
+  note: boolean;
+  /** the frame opens but never closes (a title the agent app cut short): nothing of it can be told apart from the note */
+  cutShort: boolean;
+}
+/**
+ * Spec 116 T009: takes the memory note frame off the start of a first message the agent app stored (its session title, its history). Adapter-neutral and
+ * pure: the frame is `noteOpen(nonce)` ... `noteClose(nonce)` with the same nonce, then a blank line. A text that does not start with the opening line is
+ * returned as it is. A frame with no matching closing line is `cutShort` and its text is dropped (the note's words are not the person's).
+ */
+export function splitMemoryNote(raw: unknown): NoteSplit {
+  const t = typeof raw === 'string' ? raw : '';
+  const m = HEAD_RE.exec(t);
+  if (!m) return { text: t, note: false, cutShort: false };
+  const close = noteClose(m[1]);
+  const i = t.indexOf('\n' + close);
+  if (i < 0) return { text: '', note: false, cutShort: true };
+  return { text: t.slice(i + 1 + close.length).replace(/^\s*\n/, '').replace(/^\n+/, ''), note: true, cutShort: false };
+}

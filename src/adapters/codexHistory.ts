@@ -7,6 +7,7 @@ import type { HistoryItem, HistoryLimits, HistoryResult, PreviousSession } from 
 import { cleanSessionTitle, cleanTitle, sameDir } from './history';
 import type { ModelOption } from '../shared/modelswitch';
 import { isObj, nonEmptyStr as str } from '../shared/guards';
+import { splitMemoryNote } from '../shared/memorynote';
 
 /** Codex sends seconds since the epoch; Durbar uses milliseconds. */
 const ms = (v: unknown): number => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? (v < 1e12 ? Math.round(v * 1000) : Math.round(v)) : 0);
@@ -67,7 +68,7 @@ export function codexHistory(thread: unknown, limits: Partial<HistoryLimits> = {
       if (!isObj(it)) continue;
       if (it.type === 'userMessage') {
         const text = textOf(it.content);
-        if (text) all.push({ type: 'user', text: cap(text, maxText) });
+        if (text) { const sp = splitMemoryNote(text); all.push({ type: 'user', text: cap(sp.text, maxText), ...(sp.note || sp.cutShort ? { note: true as const } : {}) }); } // spec 116 T009
       } else if (it.type === 'agentMessage') {
         const text = typeof it.text === 'string' ? it.text.trim() : '';
         if (text) all.push({ type: 'output', text: cap(text, maxText) });

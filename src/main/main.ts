@@ -478,8 +478,12 @@ const startingFolders = (a: AgentInfo): string[] => collectOfficeFolders([{ key:
 
 /** Spec 116 T009: the memory folder(s) each session was STARTED with (its `readOnlyFolders`); the note names the live folder only while it is still this one. */
 const memoryStartRoots = new Map<string, readonly string[]>();
+/** the `readOnlyFolders` `startOptionsFor` last asked for each draft or agent object (weak: gone with the object) */
+const memoryRootsAsked = new WeakMap<AgentInfo, readonly string[]>();
 const startOptionsFor = (a: AgentInfo, resumeSessionId?: string) => {
-  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort), getMemoryOps()?.readRoots(startingFolders(a)) ?? []), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
+  const memRoots = getMemoryOps()?.readRoots(startingFolders(a)) ?? [];
+  memoryRootsAsked.set(a, memRoots);
+  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort), memRoots), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
   const appId = router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId;
   const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], appId, new Set(Object.keys(base.mcpServers)));
   // spec 087 FR-019 (the organization policy, read in main) and FR-007c (the stored choice); the adapter decides what they mean
@@ -507,9 +511,8 @@ async function addWorkspace(
   draft.maxAiCredits = startCap(ad.capabilities?.capUnit, opts.maxAiCredits, folderStore?.get(wsKey(draft))?.maxAiCredits, settingsStore?.defaultMaxAiCredits);
   // spec 076 FR-203: the guard checks the mode and model of exactly these options and only then starts the adapter; a refusal throws
   // before the start (nothing started, nothing written), and advice is shown as a toast once the session has started (`agents:orgNote`)
-  const startOpts = { ...startOptionsFor(draft, opts.resumeSessionId), resumeSessionId: opts.resumeSessionId };
-  const { result: id } = await startGuardOp(orgGuard, ad, startOpts);
-  memoryStartRoots.set(id, startOpts.readOnlyFolders ?? []);
+  const { result: id } = await startGuardOp(orgGuard, ad, { ...startOptionsFor(draft, opts.resumeSessionId), resumeSessionId: opts.resumeSessionId });
+  memoryStartRoots.set(id, memoryRootsAsked.get(draft) ?? []); // spec 116 T009: what `startOptionsFor` asked for this start
   router.bind(id, adapterId);
   const saved = folderStore?.get(wsKey(draft));
   const info: AgentInfo = { ...draft, id, hidden: saved?.hidden, label: saved?.label, defaultAgent: saved?.defaultAgent };
@@ -545,9 +548,8 @@ async function ensureLive(a: AgentInfo, opts: { quiet?: boolean } = {}): Promise
         resume = !!prev;
         continued.set(a.id, { resumed: resume, title: prev?.title });
       }
-      const so = { ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true };
-      await startGuardOp(orgGuard, ad, so); // spec 076 FR-203
-      memoryStartRoots.set(a.id, so.readOnlyFolders ?? []);
+      await startGuardOp(orgGuard, ad, { ...startOptionsFor(a), ...(resume ? { resumeSessionId: a.id } : { sessionId: a.id }), quiet: opts.quiet ?? true }); // spec 076 FR-203
+      memoryStartRoots.set(a.id, memoryRootsAsked.get(a) ?? []);
       a.lazy = false;
       a.resumeLast = undefined;
     })();
@@ -1029,7 +1031,7 @@ const getMemoryNote = (): MemoryNote | undefined => (SIMULATOR || !getMemoryOps(
   roots: (id) => getMemoryOps()?.readRoots(startingFolders(agents.get(id) as AgentInfo)) ?? [],
   startRoots: (id) => memoryStartRoots.get(id) ?? [],
   names: (dir) => fs.readdirSync(dir), // ONE readdir of the top level: names only, no file is opened (FR-050)
-  keyOf: (id) => { const app = appIdOf(id); return app ? fingerprint(app, resumeIdFor(id)) : undefined; },
+  keyOf: (id, folder) => { const app = appIdOf(id); return app ? fingerprint(app, resumeIdFor(id), folder) : undefined; }, // the memory folder is part of the key
   sent: (noteSent ??= new NoteSentStore(path.join(app.getPath('userData'), 'memory-note-sent.json'))),
 })));
 registerMemoryIpc({ getOps: getMemoryOps, notePreview: (id) => (agents.has(id) ? getMemoryNote()?.preview(id) : undefined) });

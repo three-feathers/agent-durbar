@@ -10,6 +10,7 @@ import * as path from 'path';
 import { DEFAULT_HISTORY_LIMITS, TOOL_NAME_MAX, cleanSessionTitle, cut, sameDir, toolLabel } from './history';
 import type { HistoryItem, HistoryLimits, HistoryResult, PreviousSession } from './history';
 import { isObj } from '../shared/guards';
+import { splitMemoryNote } from '../shared/memorynote';
 import { isClaudeContinuation } from './autopilot';
 
 export const HEAD_BYTES = 256 * 1024;
@@ -99,7 +100,8 @@ export function claudeHistoryBuilder(limits: Partial<HistoryLimits> = {}, dropGo
       const p = typedPrompt(o);
       if (dropGoalClear && p === '/goal clear') return; // spec 099 FR-053: Durbar's own clear, never a person's message; off in the default build (spec *Changes*)
       if (p) {
-        items.push({ type: 'user', text: cut(p, lim.maxTextChars), ts: tsOf(o) });
+        const sp = splitMemoryNote(p); // spec 116 T009
+        items.push({ type: 'user', text: cut(sp.text, lim.maxTextChars), ts: tsOf(o), ...(sp.note || sp.cutShort ? { note: true as const } : {}) });
         return;
       }
       if (lim.textOnly || !Array.isArray(content)) return;

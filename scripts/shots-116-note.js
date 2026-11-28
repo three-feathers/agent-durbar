@@ -40,6 +40,7 @@ module.exports = async (ctx) => {
     await openAgent(world);
     assert.ok(await until(`!!document.querySelector('#memNote:not([hidden]) details summary')`), `${w}: the preview is in the composer`);
     assert.strictEqual(await js(`document.querySelector('#memNote summary').textContent`), 'Sent with your next message: memory note');
+    assert.strictEqual(await js(`document.querySelector('#memNote .mem-note-lead').textContent`), 'This is what the agent reads first:');
     const text = await js(`document.querySelector('#memNote pre').textContent`);
     assert.ok(/^\[Memory note [0-9a-f]{16} from Agent Durbar\./.test(text) && /Memory folder: ~\/notes\/brain/.test(text) && /\[End of memory note [0-9a-f]{16}\]$/.test(text), 'the preview holds the framed text');
     assert.ok(await js(`!document.querySelector('#memNote details').open`), 'closed by default');
@@ -64,6 +65,17 @@ module.exports = async (ctx) => {
     assert.ok(await until(`[...document.querySelectorAll('#chat .msg.user .bubble')].some(b=>b.textContent==='And one more thing')`), 'the second message is in the chat');
     assert.strictEqual(await js(`document.querySelectorAll('#chat .mem-note-sent').length`), 1, 'one note line only');
     assert.ok(await js(`document.getElementById('memNote').hidden===true`), 'no preview again');
+    // a long chat: the note at the top does not push the person's message out of sight (Vikram's check)
+    for (let i = 0; i < 8; i++) {
+      await type('Follow-up question number ' + (i + 1) + ': what does the registry export, and which callers still use the old names?');
+      const want = 'Follow-up question number ' + (i + 1) + ':';
+      assert.ok(await until(`[...document.querySelectorAll('#chat .msg.user .bubble')].some(b=>b.textContent.startsWith(${jsLiteral(want)}))`), 'follow-up ' + (i + 1) + ' is in the chat');
+    }
+    await js(`(()=>{const n=document.querySelector('#chat .mem-note-sent');n.open=true;n.scrollIntoView({block:'start'});return true})()`);
+    await H.settle();
+    assert.ok(await js(`(()=>{const c=document.getElementById('chat').getBoundingClientRect();const e=document.querySelector('#chat .mem-note-sent');const b=e.nextElementSibling.querySelector('.bubble').getBoundingClientRect();return b.top>=c.top&&b.bottom<=c.bottom+1&&e.getBoundingClientRect().top>=c.top-1})()`), `${world} ${w}: with the note open at the top of a long chat, the person's first message is still in view`);
+    assert.ok(await js(`document.querySelector('#chat .mem-note-sent .mem-note-lead').textContent==='This is what the agent reads first:'`), 'the opened line says what it is');
+    await shot('long');
   }
   console.log('[116] note PASS ' + worlds.map((x) => x[0]).join(','));
 };

@@ -10498,7 +10498,7 @@ function replayHistory(a,h,title,lead){
   const agentMsg=()=>{if(!m){m=document.createElement('div');m.className='msg agent';m.innerHTML='<div class="meta">'+esc(a.name)+'</div>';chat.el.appendChild(m);}return m;};
   const chipBox=()=>{const mm=agentMsg();let l=mm.lastElementChild;if(!l||!l.classList.contains('chips')){l=document.createElement('div');l.className='chips';l.setAttribute('aria-label','Tool calls');mm.appendChild(l);}return l;};
   for(const it of ((h&&h.items)||[])){
-    if(it.type==='user'){m=null;addUserMsg(chat,it.text,(it.attachments||[]).map(x=>({name:x.name,img:x.kind==='image'})),it.ts);}
+    if(it.type==='user'){m=null;const um=addUserMsg(chat,it.text||(it.note?'(first message)':''),(it.attachments||[]).map(x=>({name:x.name,img:x.kind==='image'})),it.ts);if(it.note&&window.DurbarMemory){const nl=window.DurbarMemory.sentLineBare(document);if(nl&&um&&um.parentNode)um.parentNode.insertBefore(nl,um);}} /* spec 116 T009: a reloaded first message shows the person's own text and a plain Memory note sent line */
     else if(it.type==='output'){const b=document.createElement('div');b.className='bubble';agentMsg().appendChild(b);mdSet(b,it.text,true);}
     else{const full=it.output||'';addChip(chipBox(),makeChip({tool:it.tool,label:cutLabel(it.tool,it.label), /* spec 005 FR-342 */res:SHORT(full||(it.failed?'failed':'ok'),60),output:full,state:it.failed?'failed':'ok'}));}
   }

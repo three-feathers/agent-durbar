@@ -17,8 +17,8 @@ export interface MemoryNoteDeps {
   startRoots(agentId: string): readonly string[];
   /** ONE `readdir` of the folder's top level, names only */
   names(dir: string): string[];
-  /** the session's record key (`fingerprint(app id, resume id)`), or undefined when it cannot be told */
-  keyOf(agentId: string): string | undefined;
+  /** the record key of this session AND this memory folder (`fingerprint(app id, resume id, folder)`): a session resumed later with another memory folder gets one note for it, or undefined when it cannot be told */
+  keyOf(agentId: string, folder: string): string | undefined;
   sent: { has(key: string): boolean; claim(key: string): boolean; release(key: string): void; commit(key: string): void };
   nonce?: () => string;
 }
@@ -28,65 +28,54 @@ export interface NoteTaken { text: string; commit(): void; release(): void }
 const MAX_PENDING = 64;
 
 export class MemoryNote {
-  private pending = new Map<string, { id: string; nonce: string; text: string }>();
+  private pending = new Map<string, { id: string; nonce: string; text: string; key: string }>();
   constructor(private readonly d: MemoryNoteDeps) {}
 
-  /** the block with this nonce, or undefined (memory not usable, a bad path, a throw) */
-  private build(agentId: string, nonce: string): string | undefined {
+  /** the block with this nonce and its record key, or undefined (memory not usable, a bad path, a throw) */
+  private build(agentId: string, nonce: string): { text: string; key: string } | undefined {
     try {
       const dir = this.d.roots(agentId)[0];
       if (typeof dir === 'string' && this.d.startRoots(agentId)[0] !== dir) return undefined; // a session started before the memory was on, or with another folder, cannot read this one
       if (typeof dir !== 'string' || !dir || unhide(dir) !== dir || /[\u0000-\u001f\u007f]/.test(dir)) return undefined;
+      const key = this.d.keyOf(agentId, dir);
+      if (key === undefined) return undefined;
       let names: string[] = [];
       try { names = this.d.names(dir); } catch { names = []; } // a folder that cannot be listed still gets its note, without an entry line
       const part = { id: 'memory', open: noteOpen, body: noteBody(dir, entryNameOf(names)), close: noteClose };
       const chain = firstMessageChain([part], { nonces: [nonce] });
       // masking must not touch the note: a token-shaped folder name would be rewritten and the note would name a folder that does not exist (fail closed)
-      return chain && chain.text === [part.open(nonce), part.body, part.close(nonce)].join('\n') ? chain.text : undefined;
+      return chain && chain.text === [part.open(nonce), part.body, part.close(nonce)].join('\n') ? { text: chain.text, key } : undefined;
     } catch { return undefined; }
-  }
-
-  private sentAlready(agentId: string): boolean {
-    const k = this.d.keyOf(agentId);
-    return k === undefined || this.d.sent.has(k);
   }
 
   /** for the composer: undefined when nothing will be sent (already sent, off, refused, unknown) */
   preview(agentId: string): NotePreview | undefined {
     this.pending.delete(agentId);
     try {
-      if (this.sentAlready(agentId)) return undefined;
       const nonce = (this.d.nonce ?? drawNonce)();
-      const text = this.build(agentId, nonce);
-      if (text === undefined) return undefined;
+      const b = this.build(agentId, nonce);
+      if (b === undefined || this.d.sent.has(b.key)) return undefined;
       const id = randomBytes(8).toString('hex');
       if (this.pending.size >= MAX_PENDING) this.pending.delete(this.pending.keys().next().value as string);
-      this.pending.set(agentId, { id, nonce, text });
-      return { id, text };
+      this.pending.set(agentId, { id, nonce, text: b.text, key: b.key });
+      return { id, text: b.text };
     } catch { return undefined; }
   }
 
   /** for the send, on a typed first message: the exact previewed text, claimed for this send, or undefined */
   take(agentId: string, noteId: unknown): NoteTaken | undefined {
-    let key: string | undefined;
-    let claimed = false;
     try {
       const p = this.pending.get(agentId);
       if (!p || typeof noteId !== 'string' || noteId !== p.id) return undefined;
-      key = this.d.keyOf(agentId);
-      if (key === undefined || !this.d.sent.claim(key)) return undefined;
-      claimed = true;
-      const text = this.build(agentId, p.nonce);
-      if (text === undefined || text !== p.text) { this.d.sent.release(key); this.pending.delete(agentId); return undefined; }
-      const k = key;
+      const b = this.build(agentId, p.nonce);
+      if (b === undefined || b.text !== p.text || b.key !== p.key) { this.pending.delete(agentId); return undefined; }
+      if (!this.d.sent.claim(b.key)) return undefined;
+      const k = b.key;
       return {
-        text,
+        text: b.text,
         commit: () => { this.d.sent.commit(k); this.pending.delete(agentId); },
         release: () => this.d.sent.release(k),
       };
-    } catch {
-      if (claimed && key !== undefined) { try { this.d.sent.release(key); } catch { /* nothing more to do */ } }
-      return undefined;
-    }
+    } catch { return undefined; }
   }
 }

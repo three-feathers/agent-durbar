@@ -6,6 +6,7 @@
  */
 import * as path from 'path';
 import { isObj } from '../shared/guards';
+import { splitMemoryNote } from '../shared/memorynote';
 
 /** Spec 012 FR-183: longest tool name an agent event or a history tool item may carry; a longer one is left out (the event gate refuses it, `eventguard.ts`). */
 export const TOOL_NAME_MAX = 256;
@@ -71,7 +72,9 @@ const TITLE_DROP_RE = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f\u200
  */
 export function cleanSessionTitle(v: unknown, max = 80, wholeWords = false): string | undefined {
   if (typeof v !== 'string') return undefined;
-  const s = v.replace(TITLE_DROP_RE, '').replace(/\s+/g, ' ').trim();
+  const sp = splitMemoryNote(v); // spec 116 T009: the memory note is not the person's title; a frame the app cut short leaves no title
+  if (sp.cutShort) return undefined;
+  const s = sp.text.replace(TITLE_DROP_RE, '').replace(/\s+/g, ' ').trim();
   if (!s) return undefined;
   if (s.length <= max) return s;
   let cut = max - 1;
@@ -115,7 +118,7 @@ export function previousSessionsFor(
 /* ------------------------------------------------------------------ history replay ------------------------------------------------------------------ */
 
 export type HistoryItem =
-  | { type: 'user'; text: string; attachments?: { name: string; kind: 'file' | 'image' }[]; ts?: number }
+  | { type: 'user'; text: string; attachments?: { name: string; kind: 'file' | 'image' }[]; ts?: number; /** the first message carried the memory note (spec 116 T009); `text` is the person's own */ note?: true }
   | { type: 'output'; text: string; ts?: number }
   | { type: 'tool'; callId: string; tool: string; label: string; output?: string; failed?: boolean; ts?: number };
 
@@ -180,7 +183,8 @@ export function eventsToHistory(events: readonly unknown[], limits: Partial<Hist
             })
           : [];
         if (!text && !atts.length) break;
-        items.push({ type: 'user', text: cut(text, lim.maxTextChars), attachments: atts.length ? atts : undefined, ts: tsOf(raw) });
+        const sp = splitMemoryNote(text); // spec 116 T009: the person's own text; the note shows as a line
+        items.push({ type: 'user', text: cut(sp.text, lim.maxTextChars), attachments: atts.length ? atts : undefined, ts: tsOf(raw), ...(sp.note || sp.cutShort ? { note: true as const } : {}) });
         break;
       }
       case 'assistant.message': {

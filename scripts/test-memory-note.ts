@@ -32,20 +32,33 @@ const MUTANTS: Record<string, Mut> = {
   nonceAtSend: { kind: 'js', mod: 'main/memorynote', from: 'this.build(agentId, p.nonce)', to: 'this.build(agentId, (0, firstmessage_1.drawNonce)())', section: 'note' },
   noteBeforeExpansion: { kind: 'js', mod: 'main/agentops', from: 'ad.expandSlashCommand(id, text)', to: "ad.expandSlashCommand(id, (prefix ? prefix + '\\n\\n' : '') + text)", section: 'slash' },
   noteOnTypedCommand: { kind: 'js', mod: 'main/agentops', from: '(!!expanded || !/^\\s*\\//.test(text))', to: 'true', section: 'slash' },
-  sentStateInMemoryOnly: { kind: 'js', mod: 'main/notesent', from: 'fs.writeFileSync(tmp,', to: '(() => 0)(tmp,', section: 'restart' },
+  sentStateInMemoryOnly: { kind: 'js', mod: 'main/notesent', from: 'this.fs.writeSync(fd, JSON.stringify({ sent: this.list }));', to: '(() => 0)();', section: 'restart' },
   claimless: { kind: 'js', mod: 'main/notesent', from: 'this.claimed.add(key);', to: '', section: 'restart' },
-  previewNotCompared: { kind: 'js', mod: 'main/memorynote', from: 'text === undefined || text !== p.text', to: 'text === undefined', section: 'note' },
+  previewNotCompared: { kind: 'js', mod: 'main/memorynote', from: 'b.text !== p.text ||', to: '', section: 'note' },
   offStillBuilds: { kind: 'js', mod: 'main/memorynote', from: 'this.d.roots(agentId)[0]', to: "this.d.roots(agentId)[0] ?? '/example.invalid/brain'", section: 'failclosed' },
   startRootIgnored: { kind: 'js', mod: 'main/memorynote', from: 'this.d.startRoots(agentId)[0] !== dir', to: 'false', section: 'startroot' },
   maskChangeAllowed: { kind: 'js', mod: 'main/memorynote', from: "chain && chain.text === [part.open(nonce), part.body, part.close(nonce)].join('\\n')", to: 'chain', section: 'failclosed' },
   trimOnWriteMissing: { kind: 'js', mod: 'main/notesent', from: 'this.list = this.list.slice(-exports.MAX_SENT);', to: '', section: 'restart' },
-  startRootNotRecorded: { kind: 'src', file: 'src/main/main.ts', from: 'memoryStartRoots.set(a.id, so.readOnlyFolders ?? []);', to: '', section: 'wiring' },
+  startRootNotRecorded: { kind: 'src', file: 'src/main/main.ts', from: 'memoryStartRoots.set(a.id, memoryRootsAsked.get(a) ?? []);', to: '', section: 'wiring' },
   hiddenPathAccepted: { kind: 'js', mod: 'main/memorynote', from: 'unhide)(dir) !== dir ||', to: 'unhide)(dir) === 7 ||', section: 'failclosed' },
   ipcTypedNoGate: { kind: 'src', file: 'src/main/ipc/agents.ts', from: 'const typed = fromApp(e) && ', to: 'const typed = ', section: 'wiring' },
   rendererHandoverCarries: { kind: 'src', file: 'src/renderer/app.js', from: 'opts&&opts.typed===true&&fromComposer&&memNoteFor===a.id', to: 'memNoteFor===a.id', section: 'wiring' },
   mainReadsAFile: { kind: 'src', file: 'src/main/main.ts', from: 'names: (dir) => fs.readdirSync(dir),', to: "names: (dir) => [fs.readFileSync(path.join(dir, 'README.md'), 'utf8')],", section: 'wiring' },
   uiGateRemoved: { kind: 'src', file: 'src/renderer/memory.js', from: 'const ok=shown()&&p&&', to: 'const ok=p&&', section: 'ui' },
-  uiHtml: { kind: 'src', file: 'src/renderer/memory.js', from: 'pre.textContent=String(text);', to: 'pre.innerHTML=String(text);', section: 'ui' },
+  readerFollowsLinks: { kind: 'js', mod: 'main/notesent', from: '(0, memorygit_1.memoryGitFlags)(this.fs.constants)', to: '{ O_RDONLY: 0 }', section: 'links' },
+  capRemoved: { kind: 'js', mod: 'main/notesent', from: 'file, exports.MAX_FILE)', to: 'file, Infinity)', section: 'restart' },
+  hexFilterRemoved: { kind: 'js', mod: 'main/notesent', from: "typeof x === 'string' && /^[0-9a-f]{32}$/.test(x)", to: "typeof x === 'string'", section: 'restart' },
+  writeNotExclusive: { kind: 'js', mod: 'main/notesent', from: ' | c.O_EXCL', to: '', section: 'tmpplant' },
+  writeNoLinkGuards: { kind: 'js', mod: 'main/notesent', from: ' | c.O_EXCL | (c.O_NOFOLLOW ?? 0)', to: '', section: 'tmpplant' },
+  writeModeWide: { kind: 'js', mod: 'main/notesent', from: '0o600); // exclusive', to: '0o644); // exclusive', section: 'mode' },
+  tmpNameFixed: { kind: 'js', mod: 'main/notesent', from: '(0, crypto_1.randomBytes)(8).toString(\'hex\'))', to: '\'0123456789abcdef\')', section: 'tmpplant' },
+  folderOutOfKey: { kind: 'js', mod: 'main/notesent', from: "folder === '' ? '' : ':' + folder", to: "''", section: 'restart' },
+  folderNotGivenToKey: { kind: 'js', mod: 'main/memorynote', from: 'this.d.keyOf(agentId, dir)', to: "this.d.keyOf(agentId, '')", section: 'once' },
+  mainKeyIgnoresFolder: { kind: 'src', file: 'src/main/main.ts', from: 'fingerprint(app, resumeIdFor(id), folder)', to: 'fingerprint(app, resumeIdFor(id))', section: 'wiring' },
+  titleKeepsNote: { kind: 'js', mod: 'adapters/history', from: 'const sp = (0, memorynote_1.splitMemoryNote)(v);', to: 'const sp = { text: v, note: false, cutShort: false };', section: 'strip' },
+  codexKeepsNote: { kind: 'src', file: 'src/adapters/codexHistory.ts', from: 'const sp = splitMemoryNote(text); all.push', to: 'const sp = { text, note: false, cutShort: false }; all.push', section: 'strip' },
+  stripNeedsSameNonce: { kind: 'js', mod: 'shared/memorynote', from: "t.indexOf('\\n' + close)", to: "t.search(/\\n\\[End of memory note [0-9a-f]+\\]/)", section: 'strip' },
+  uiHtml: { kind: 'src', file: 'src/renderer/memory.js', from: 'pre.textContent=t;', to: 'pre.innerHTML=t;', section: 'ui' },
 };
 const mutantName = process.env.MEMNOTE_MUTANT || '';
 const M = mutantName ? MUTANTS[mutantName] : undefined;
@@ -149,7 +162,7 @@ function world(over: Partial<World> = {}): { w: World; note: InstanceType<typeof
   const note = new noteMod.MemoryNote({
     roots: () => { if (w.rootsThrows) throw new Error('boom'); return w.dir === undefined ? [] : [w.dir]; },
     names: (d: string) => { w.reads.push(d); if (w.names instanceof Error) throw w.names; return w.names; },
-    keyOf: () => w.key,
+    keyOf: (_id: string, dir: string) => (w.key === undefined ? undefined : w.key + '|' + dir),
     startRoots: () => w.start,
     sent: {
       has: (k: string) => w.sentKeys.has(k) || w.claimed.has(k),
@@ -238,7 +251,7 @@ section('once', () => {
   t.commit();
   eq(note.preview('a'), undefined, 'sent: no preview any more');
   eq(note.take('a', p.id), undefined, 'sent: nothing to take');
-  ok(w.sentKeys.has('k1'), 'recorded for the session key');
+  ok(w.sentKeys.has('k1|/example.invalid/brain'), 'recorded for the session key and the memory folder');
   // a failed send releases it
   const r = world();
   const q = r.note.preview('a');
@@ -246,6 +259,17 @@ section('once', () => {
   tr.release();
   const q2 = r.note.preview('a');
   ok(q2 && r.note.take('a', q2.id), 'a failed send leaves the note for the next message');
+  // the memory folder is part of the once-key: the same session resumed later with another memory folder gets one note for it, then none
+  const ab = world({ dir: '/example.invalid/A', start: ['/example.invalid/A'] });
+  const pa = ab.note.preview('s'); ab.note.take('s', pa.id).commit();
+  eq(ab.note.preview('s'), undefined, 'folder A: sent once');
+  ab.w.dir = '/example.invalid/B'; ab.w.start = ['/example.invalid/B'];
+  const pb = ab.note.preview('s');
+  ok(pb && pb.text.includes('Memory folder: /example.invalid/B'), 'the same session with memory folder B gets one note, naming B');
+  ab.note.take('s', pb.id).commit();
+  eq(ab.note.preview('s'), undefined, 'folder B: sent once');
+  ab.w.dir = '/example.invalid/A'; ab.w.start = ['/example.invalid/A'];
+  eq(ab.note.preview('s'), undefined, 'back to A: it already had its note');
   // another session (a new key) gets it again
   w.key = 'k2';
   ok(note.preview('a'), 'a new session id gets its own note');
@@ -256,10 +280,13 @@ section('restart', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-note-'));
   try {
     const file = path.join(dir, 'memory-note-sent.json');
-    const key1 = sentMod.fingerprint('claude', 'session-1');
-    const key2 = sentMod.fingerprint('claude', 'session-2');
-    ok(/^[0-9a-f]{32}$/.test(key1) && key1 !== key2 && key1 !== sentMod.fingerprint('codex', 'session-1') && key1 === sentMod.fingerprint('claude', 'session-1'), 'fingerprints: 32 hex, per app and session, stable');
-    const mk = (store: unknown, key: string) => new noteMod.MemoryNote({ roots: () => ['/example.invalid/brain'], names: () => ['README.md'], startRoots: () => ['/example.invalid/brain'], keyOf: () => key, sent: store });
+    const key1 = 'session-1';
+    const key2 = 'session-2';
+    const fp1 = sentMod.fingerprint('claude', key1, '/example.invalid/brain');
+    const fp = sentMod.fingerprint;
+    ok(/^[0-9a-f]{32}$/.test(fp('claude', 's1', '/a')) && fp('claude', 's1', '/a') !== fp('claude', 's2', '/a') && fp('claude', 's1', '/a') !== fp('codex', 's1', '/a') && fp('claude', 's1', '/a') === fp('claude', 's1', '/a'), 'fingerprints: 32 hex, per app and session, stable');
+    ok(fp('claude', 's1', '/a') !== fp('claude', 's1', '/b') && fp('claude', 's1', '/a') !== fp('claude', 's1'), 'the memory folder is part of the key');
+    const mk = (store: unknown, key: string) => new noteMod.MemoryNote({ roots: () => ['/example.invalid/brain'], names: () => ['README.md'], startRoots: () => ['/example.invalid/brain'], keyOf: (_i: string, dir: string) => sentMod.fingerprint('claude', key, dir), sent: store });
     const s1 = new sentMod.NoteSentStore(file);
     const n1 = mk(s1, key1);
     const p = n1.preview('x');
@@ -277,8 +304,19 @@ section('restart', () => {
     for (const content of ['{not json', '{"sent":"x"}', '[]', '{"sent":[1,"zz","' + 'g'.repeat(32) + '"]}', 'x'.repeat(300000)]) {
       fs.writeFileSync(file, content);
       const s = new sentMod.NoteSentStore(file);
-      ok(!s.has(key1), 'a bad file reads as empty: ' + content.slice(0, 12));
+      ok(!s.has(fp1), 'a bad file reads as empty: ' + content.slice(0, 12));
     }
+    // the cap decides: a VALID file over the cap reads as empty (not as "not JSON")
+    const many = Array.from({ length: 9000 }, (_, i) => sentMod.fingerprint('a', String(i)));
+    const bigJson = JSON.stringify({ sent: [...many, fp1] });
+    ok(Buffer.byteLength(bigJson) > sentMod.MAX_FILE, 'the fixture is over the cap');
+    fs.writeFileSync(file, bigJson);
+    ok(!new sentMod.NoteSentStore(file).has(fp1), 'a valid file over the 256 KB cap is not read');
+    fs.writeFileSync(file, JSON.stringify({ sent: [fp1] }));
+    ok(new sentMod.NoteSentStore(file).has(fp1), 'the same file under the cap is read');
+    // only 32 lower-case hex characters are kept
+    fs.writeFileSync(file, JSON.stringify({ sent: ['short', 'G'.repeat(32), 'A'.repeat(32), fp1] }));
+    { const f = new sentMod.NoteSentStore(file); ok(!f.has('short') && !f.has('G'.repeat(32)) && !f.has('A'.repeat(32)) && f.has(fp1), 'entries that are not 32 lower-case hex are dropped'); }
     // cap: the oldest go
     fs.rmSync(file, { force: true });
     const c = new sentMod.NoteSentStore(file);
@@ -289,15 +327,115 @@ section('restart', () => {
     eq(JSON.parse(fs.readFileSync(file, 'utf8')).sent.length, sentMod.MAX_SENT, 'the FILE holds exactly MAX_SENT entries (trimmed on write, not only on read)');
     // claims
     const cl = new sentMod.NoteSentStore(path.join(dir, 'other.json'));
-    ok(cl.claim(key1) && !cl.claim(key1) && cl.has(key1), 'a claim is taken once');
-    cl.release(key1);
-    ok(cl.claim(key1), 'released: can be claimed again');
+    ok(cl.claim(fp1) && !cl.claim(fp1) && cl.has(fp1), 'a claim is taken once');
+    cl.release(fp1);
+    ok(cl.claim(fp1), 'released: can be claimed again');
     // an unwritable folder keeps the record for this run
     const bad = new sentMod.NoteSentStore(path.join(dir, 'file.txt', 'x.json'));
     fs.writeFileSync(path.join(dir, 'file.txt'), 'x');
-    bad.commit(key1);
-    ok(bad.has(key1), 'a failed write still remembers it for this run');
+    bad.commit(fp1);
+    ok(bad.has(fp1), 'a failed write still remembers it for this run');
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---------- the store on the real file system: links, special files, temp names, mode ----------
+const posix = process.platform !== 'win32';
+section('fifo', () => {
+  if (!posix) return;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-fifo-'));
+  try {
+    const file = path.join(dir, 'memory-note-sent.json');
+    const mk = spawnSync('mkfifo', [file]);
+    if (mk.status !== 0) return; // no mkfifo here: nothing to test
+    // a child process, so a store that blocks on the FIFO cannot hang this run
+    const t0 = Date.now();
+    const r = spawnSync(process.execPath, ['-e', `const m=require(${JSON.stringify(path.join(COMPILED, 'main/notesent.js'))});const s=new m.NoteSentStore(${JSON.stringify(file)});process.exit(s.has('0'.repeat(32))?3:0)`], { timeout: 8000 });
+    eq(r.status, 0, 'a FIFO at the store path is skipped at once (never blocks main): ' + String(r.error ?? ''));
+    ok(Date.now() - t0 < 7000, 'and quickly');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+section('links', () => {
+  if (!posix) return;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-link-'));
+  try {
+    const fp = sentMod.fingerprint('claude', 's', '/example.invalid/brain');
+    const other = path.join(dir, 'other.json');
+    fs.writeFileSync(other, JSON.stringify({ sent: [fp] }));
+    const file = path.join(dir, 'memory-note-sent.json');
+    fs.symlinkSync(other, file);
+    ok(!new sentMod.NoteSentStore(file).has(fp), 'a link at the store path is not followed: read as empty');
+    // a hard-linked file is not read either
+    const file2 = path.join(dir, 'hard.json');
+    fs.linkSync(other, file2);
+    ok(!new sentMod.NoteSentStore(file2).has(fp), 'a hard-linked file is not read');
+    // a store written over a link replaces the link and leaves what it pointed to alone
+    const s = new sentMod.NoteSentStore(file);
+    s.commit(fp);
+    eq(JSON.parse(fs.readFileSync(other, 'utf8')).sent, [fp], 'the old target is untouched');
+    ok(!fs.lstatSync(file).isSymbolicLink() && new sentMod.NoteSentStore(file).has(fp), 'the store is a regular file again and holds the key');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+section('tmpplant', () => {
+  if (!posix) return;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-tmp-'));
+  try {
+    const file = path.join(dir, 'memory-note-sent.json');
+    const victim = path.join(dir, 'victim.txt');
+    fs.writeFileSync(victim, 'keep me');
+    fs.symlinkSync(victim, file + '.deadbeef.tmp'); // a link planted at the temp name the writer will try (the random source is fixed for this test)
+    const fp = sentMod.fingerprint('claude', 's', '/example.invalid/brain');
+    const s = new sentMod.NoteSentStore(file, { rand: () => 'deadbeef' });
+    s.commit(fp);
+    eq(fs.readFileSync(victim, 'utf8'), 'keep me', 'a link planted at the temp name is never written through');
+    ok(s.has(fp), 'the key is still remembered for this run');
+    // a hard link planted at the temp name (a link that O_NOFOLLOW does not stop): only the exclusive open keeps the victim intact
+    const victim2 = path.join(dir, 'victim2.txt');
+    fs.writeFileSync(victim2, 'keep me too');
+    fs.linkSync(victim2, file + '.cafebabe.tmp');
+    new sentMod.NoteSentStore(file, { rand: () => 'cafebabe' }).commit(fp);
+    eq(fs.readFileSync(victim2, 'utf8'), 'keep me too', 'a file planted at the temp name is never opened (exclusive create)');
+    // a normal name: a random part, no leftovers
+    const s2 = new sentMod.NoteSentStore(path.join(dir, 'b.json'));
+    s2.commit(fp);
+    ok(fs.readdirSync(dir).filter((f) => f.startsWith('b.json')).join() === 'b.json', 'no temp file is left behind');
+    // the real random part is not predictable: two names differ
+    const names = new Set<string>();
+    const fake = { ...fs, openSync: (f: string, ...a: unknown[]) => { names.add(String(f)); return (fs.openSync as (...x: unknown[]) => number)(f, ...a); } } as unknown as typeof fs;
+    for (let i = 0; i < 5; i++) new sentMod.NoteSentStore(path.join(dir, 'c.json'), { fs: fake }).commit(sentMod.fingerprint('a', String(i)));
+    const tmps = [...names].filter((n) => n.endsWith('.tmp'));
+    ok(tmps.length >= 5 && new Set(tmps).size === tmps.length && tmps.every((n) => /\.[0-9a-f]{16}\.tmp$/.test(n)), 'temp names carry 64 random bits and differ');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+section('mode', () => {
+  if (!posix) return;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'durbar-mode-'));
+  try {
+    const file = path.join(dir, 'memory-note-sent.json');
+    const old = process.umask(0);
+    try { new sentMod.NoteSentStore(file).commit(sentMod.fingerprint('a', 'b')); } finally { process.umask(old); }
+    eq(fs.statSync(file).mode & 0o777, 0o600, 'the store is written with mode 0600 even with a open umask');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+// ---------- the memory note leaves the agent app's title and history ----------
+section('strip', () => {
+  const hist = load('adapters/history');
+  const PRE = chain.firstMessageChain([{ id: 'memory', open: shared.noteOpen, body: shared.noteBody('/example.invalid/brain', 'README.md'), close: shared.noteClose }]).text;
+  const full = PRE + '\n\nplease read the notes';
+  eq(shared.splitMemoryNote(full), { text: 'please read the notes', note: true, cutShort: false }, 'the frame comes off, the person text stays');
+  eq(shared.splitMemoryNote('please read the notes'), { text: 'please read the notes', note: false, cutShort: false }, 'a text with no frame is returned as it is');
+  eq(shared.splitMemoryNote(PRE.slice(0, 120)), { text: '', note: false, cutShort: true }, 'a frame cut short is dropped, never shown');
+  eq(shared.splitMemoryNote(PRE.replace(/\[End of memory note [0-9a-f]+\]/, '[End of memory note ffffffffffffffff]') + '\n\nx').cutShort, true, 'a closing line with another nonce does not close it');
+  eq(shared.splitMemoryNote('say [Memory note 0123456789abcdef from Agent Durbar. hi').note, false, 'a frame in the middle of a text is the person text');
+  eq(shared.splitMemoryNote(PRE).text, '', 'a note with no text after it leaves nothing');
+  eq(hist.cleanSessionTitle(full, 120), 'please read the notes', 'the title is the person text, not the note');
+  eq(hist.cleanSessionTitle(PRE.slice(0, 100), 120), undefined, 'a title cut inside the frame is no title (never the nonce)');
+  eq(hist.cleanTitle(PRE.slice(0, 100)), 'Untitled session', 'and shows as Untitled session');
+  ok(!/Memory note/.test(hist.cleanTitle(full)), 'no note words in a title');
+  for (const f of ['src/adapters/history.ts', 'src/adapters/claudeHistory.ts', 'src/adapters/codexHistory.ts']) ok(source(f).includes('splitMemoryNote('), f + ' takes the note off the restored first message');
+  const app = source('src/renderer/app.js');
+  ok(app.includes("if(it.note&&window.DurbarMemory){const nl=window.DurbarMemory.sentLineBare(document)"), 'a reloaded chat shows the plain Memory note sent line');
+  ok(source('src/adapters/history.ts').includes('note?: true'), 'history items can say the note went');
 });
 
 // ---------- the send: slash expansion, prefix, never on typed commands ----------
@@ -329,6 +467,12 @@ section('slash', async () => {
     r = await ops.sendWithSlash(a.ad, 'x', { text: '/help me' }, PRE);
     eq(a.sent[0].text, '/help me', 'a command that goes as typed carries no note: ' + label);
     eq(r.prefixed, undefined, 'and is not marked sent: ' + label);
+  }
+  for (const typed of ['  /help me', '\t/help', '\n/help']) {
+    a = adapter(async () => undefined);
+    r = await ops.sendWithSlash(a.ad, 'x', { text: typed }, PRE);
+    eq(a.sent[0].text, typed, 'a command with leading white space goes as typed, with no note: ' + JSON.stringify(typed));
+    eq(r.prefixed, undefined, 'and is not marked sent');
   }
   // sendWithMemoryNote: commit only when it really went; release otherwise
   const calls: string[] = [];
@@ -383,7 +527,7 @@ section('wiring', () => {
   const sendOpBody = main.slice(main.indexOf('async function sendOp('), main.indexOf('// ---- scheduled prompts (spec 044)'));
   ok(sendOpBody.includes('getMemoryNote()?.take(id, first.noteId)') && sendOpBody.includes('first ?'), 'it is taken inside sendOp, only when `first` is set');
   eq(main.split('sendOp(').length - 1, 1, 'sendOp is defined once and called in no other place in main.ts (the IPC dep gets it by name)');
-  const callers = fs.readdirSync(path.join(ROOT, 'src', 'main'), { recursive: true } as { recursive: true }).map(String).filter((f) => f.endsWith('.ts')).filter((f) => /\bsendOp\(/.test(fs.readFileSync(path.join(ROOT, 'src', 'main', f), 'utf8')));
+  const callers = fs.readdirSync(path.join(ROOT, 'src', 'main'), { recursive: true } as { recursive: true }).map((f) => String(f).split(path.sep).join('/')).filter((f) => f.endsWith('.ts')).filter((f) => /\bsendOp\(/.test(fs.readFileSync(path.join(ROOT, 'src', 'main', ...f.split('/')), 'utf8')));
   eq(callers.sort(), ['ipc/agents.ts', 'main.ts'], 'only the agents:send handler calls sendOp (create, schedule, loop, Autopilot, handover and remote never do)');
   eq(main.split('getMemoryNote()').length - 1, 2, 'getMemoryNote() is used by the send and by the preview channel only');
   // the schedule, the loop and the nudge are wired to their own functions, never to `first`
@@ -412,6 +556,7 @@ section('wiring', () => {
   ok(source('scripts/test-ipcchannels.ts').includes("'memory:notePreview'"), 'the channel is in test:ipcchannels list of window-only channels');
   eq(main.split('memoryStartRoots.set(').length - 1, 2, 'both starts (new session, lazy start) record the folders the session started with');
   ok(main.includes('startRoots: (id) => memoryStartRoots.get(id) ?? [],'), 'the note is given the start roots');
+  ok(main.includes('fingerprint(app, resumeIdFor(id), folder)'), 'the once-key holds the memory folder');
 });
 
 // ---------- the window: the preview and the sent line ----------
@@ -426,24 +571,28 @@ class El {
 class Doc { createElement(t: string): El { return new El(t, this); } }
 section('ui', () => {
   const file = source('src/renderer/memory.js');
-  const make = (sim: boolean) => { const m = { exports: {} as unknown }; vm.runInNewContext(file, { module: m, self: {}, console }); const api = m.exports as { init(x: unknown): void; paintNotePreview(h: unknown, p: unknown): string | null; sentLine(d: unknown, t: unknown): El | null; NOTE_WORDS: { preview: string; sent: string } }; api.init({ bridge: {}, sim, esc: (s: string) => s, unhide: (s: string) => s }); return api; };
+  const make = (sim: boolean) => { const m = { exports: {} as unknown }; vm.runInNewContext(file, { module: m, self: {}, console }); const api = m.exports as { init(x: unknown): void; paintNotePreview(h: unknown, p: unknown): string | null; sentLine(d: unknown, t: unknown): El | null; sentLineBare(d: unknown): El | null; NOTE_WORDS: { preview: string; sent: string; lead: string } }; api.init({ bridge: {}, sim, esc: (s: string) => s, unhide: redact.unhide }); return api; };
   const doc = new Doc();
   const TEXT = '[Memory note 0123456789abcdef from Agent Durbar. x]\nMemory folder: /example.invalid/m\n<b>bold</b> & "q"\n[End of memory note 0123456789abcdef]';
   const on = make(true);
-  eq(JSON.parse(JSON.stringify(on.NOTE_WORDS)), { preview: 'Sent with your next message: memory note', sent: 'Memory note sent' }, 'the two fixed words');
+  eq(JSON.parse(JSON.stringify(on.NOTE_WORDS)), { preview: 'Sent with your next message: memory note', sent: 'Memory note sent', lead: 'This is what the agent reads first:' }, 'the fixed words');
   const host = doc.createElement('div');
   eq(on.paintNotePreview(host, { id: 'abc', text: TEXT }), 'abc', 'a preview is painted and its id returned');
   eq(host.hidden, false, 'shown'); eq(host.dataset.noteId, 'abc', 'the id is kept for the send');
   const d = host.children[0];
   eq(d.tag, 'details', 'a disclosure'); eq(d.children[0].textContent, 'Sent with your next message: memory note', 'summary words');
-  eq(d.children[1].textContent, TEXT, 'the box holds the exact text, byte for byte, as text (not HTML)');
-  ok(!d.children[1].innerHTMLSet, 'never innerHTML');
+  eq(d.children[1].textContent, 'This is what the agent reads first:', 'a plain line says what it is, above the note');
+  eq(d.children[2].textContent, TEXT, 'the box holds the exact text, byte for byte, as text (not HTML)');
+  ok(!d.children[2].innerHTMLSet, 'never innerHTML');
+  { const hh = doc.createElement('div'); const HOST = 'x\u202ey\u200bz\nline2'; on.paintNotePreview(hh, { id: 'h', text: HOST }); eq(hh.children[0].children[2].textContent, 'xyz\nline2', 'hidden and direction characters are taken out of the shown text, line breaks stay'); }
+  { const hh = doc.createElement('div'); const bare = make(true); bare.init({ bridge: {}, sim: true, esc: (s: string) => s }); eq(bare.paintNotePreview(hh, { id: 'h', text: TEXT }), null, 'no unhide: nothing is shown (fails closed)'); eq(hh.hidden, true, 'and the box is hidden'); eq(bare.sentLine(doc, TEXT), null, 'and no sent line'); }
+  { const bl = on.sentLineBare(doc); ok(bl && bl.textContent === 'Memory note sent' && /bare/.test(bl.className), 'the plain line for a reloaded chat'); }
   for (const bad of [null, undefined, 5, {}, { id: 'a' }, { id: 'a', text: '' }, { id: 1, text: 'x' }, { ok: true, none: true }]) {
     on.paintNotePreview(host, bad);
     ok(host.hidden === true && host.children.length === 0 && host.dataset.noteId === undefined, 'nothing to send: the box is empty and hidden: ' + JSON.stringify(bad));
   }
   const line = on.sentLine(doc, TEXT);
-  ok(line && line.children[0].textContent === 'Memory note sent' && line.children[1].textContent === TEXT && /note/.test(line.className), 'the sent line opens the exact text');
+  ok(line && line.children[0].textContent === 'Memory note sent' && line.children[2].textContent === TEXT && /note/.test(line.className), 'the sent line opens the exact text');
   eq(on.sentLine(doc, ''), null, 'no text, no line'); eq(on.sentLine(doc, 5), null, 'not a string, no line');
   // the gate: outside the simulator (until T010) nothing is painted or shown
   const off = make(false);
