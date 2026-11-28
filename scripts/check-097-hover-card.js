@@ -368,6 +368,7 @@ module.exports = async (ctx) => {
     /* issue 2167: on a shared Windows desktop the OS hands the focus back to this window while the card is open (a neighbour driver ends and its window closes), so the page reports a focus again and the next assert would test the environment. The window is blurred again by state (H.forceBlur) and the card opened again, 3 tries at most; the window gets it back only here, so a card that needs the focus still fails. HOVERCARD_REGAIN=1 gives the window the focus once, as that neighbour does; HOVERCARD_BLUR=0 and HOVERCARD_MUTANT=nofocus (REGAIN on) leave the blur out: the next assert must die at 'a card is open on a window without the focus' */
     if (REGAIN) await refocus();
     for (let t = 0; t < 3 && BLUR && wk3 && await js(`document.hasFocus()`); t++) {
+      console.log(`[focus] check-097-hover-card ${tag}: the window regained the focus while the card was open (try ${t + 1} of 3): blurred again and re-opened the card`); /* printed on a retry only: the proof of the inferred cause in a Windows log. A blur Windows refuses (forceBlur returns false) goes on to the same assert and fails there: an honest red, not a skip */
       await H.forceBlur('check-097-hover-card', tag, 'the window-blur step');
       wk3 = await hoverWork('person', wk3, [R, S], `${tag} window blurred again`);
     }
