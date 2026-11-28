@@ -1224,6 +1224,7 @@ app.whenReady().then(() => {
   });
   Menu.setApplicationMenu(menu ? Menu.buildFromTemplate(menu) : null);
   folderStore = new FolderStore(path.join(app.getPath('userData'), 'durbar-folders.json'));
+  folderStore.onListChange = () => getMemoryOps()?.recheck(); // spec 116 T008: a saved room added or removed re-checks the memory folder too
   settingsStore = new SettingsStore(path.join(app.getPath('userData'), 'durbar-settings.json'));
   settingsStore.load();
   // spec 118 FR-004: packaged builds only, never the simulator; the request only through makeFeedGet on the update session (FR-007, T507: updateFeedGet), the policy read each time (FR-005).

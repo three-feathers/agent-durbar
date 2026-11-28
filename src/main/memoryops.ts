@@ -110,6 +110,7 @@ export class OfficeMap<K, V> extends Map<K, V> {
   constructor(private readonly onChange: () => void) { super(); }
   override set(k: K, v: V): this { super.set(k, v); this.notify(); return this; }
   override delete(k: K): boolean { const r = super.delete(k); if (r) this.notify(); return r; }
+  override clear(): void { const n = this.size; super.clear(); if (n > 0) this.notify(); }
   private notify(): void { try { this.onChange(); } catch { /* the office change already happened */ } }
 }
 
