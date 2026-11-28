@@ -224,6 +224,7 @@ function realOrNearest(p: string, o: Required<Pick<PathCheckOptions, 'flavor' | 
   for (;;) {
     try {
       const real = o.realpath(cur);
+      if (rest.includes('..')) return undefined; // a remaining path that would climb back is outside (spec 003 FR-320)
       return pm.resolve(real, ...rest);
     } catch (e) {
       if (!isMissing(e)) return undefined;

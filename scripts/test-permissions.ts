@@ -249,6 +249,7 @@ async function main(): Promise<void> {
       unresolvedG: ['      steps = 0;\n', '\n'],
       unresolvedH: ["codeOf(e) === 'ENOENT' || codeOf(e) === 'ENOTDIR';", "codeOf(e) === 'ENOENT';"],
       unresolvedI: ['const linkPath = bare === \'\' ||', 'const linkPath = true ? cur : bare === \'\' ||'],
+      unresolvedK: ["if (rest.includes('..')) return undefined;", ''],
       unresolvedD: ['if (fs.lstatSync(linkPath).isSymbolicLink()) {', 'if (false as boolean && fs.lstatSync(linkPath).isSymbolicLink()) {'],
     };
     const mut = process.env.PERMISSIONS_MUTANT || '';
@@ -295,8 +296,21 @@ async function main(): Promise<void> {
           const toolIn = (file: string) => ({ file_path: file });
           // unresolved-1
           const p1 = path.join(proj, 'unresolved-1') + path.sep + '..' + path.sep + 'secret.txt';
-          assert.ok(!inside(p1, [proj]), 'FR-320 unresolved-1: outside');
-          assert.ok(!readIsInsideRoots('Read', toolIn(p1), [proj]), 'FR-320 unresolved-1: a read is outside (Claude)');
+          // on Windows the OS itself reads this path as text first, so the true answer there is inside (not outside)
+          const winRows = process.platform === 'win32';
+          assert.strictEqual(inside(p1, [proj]), winRows, `FR-320 unresolved-1: ${winRows ? 'inside on Windows' : 'outside'}`);
+          assert.strictEqual(readIsInsideRoots('Read', toolIn(p1), [proj]), winRows, 'FR-320 unresolved-1: a read (Claude) follows the same rule');
+          // unresolved-19: a missing part, then a part that climbs back over a link
+          if (winRows) console.log('permissions: SKIP FR-320 unresolved-19 rows (the OS reads such paths as text on Windows; this code answers outside, a safe superset)');
+          else {
+            const q1 = [proj, 'nodir', '..', 'unresolved-1', '..', 'pwned.txt'].join(path.sep);
+            const q2 = [proj, 'a', 'b', '..', '..', 'unresolved-1', '..', 'x'].join(path.sep);
+            for (const q of [q1, q2]) {
+              assert.ok(!inside(q, [proj]), 'FR-320 unresolved-19: outside');
+              assert.ok(!writeIsInsideRoots('Write', toolIn(q), [proj]), 'FR-320 unresolved-19: a write is outside (Claude)');
+              assert.ok(!readIsInsideRoots('Read', toolIn(q), [proj]), 'FR-320 unresolved-19: a read is outside (Claude)');
+            }
+          }
           // unresolved-2: a link whose target is missing
           mk(path.join(away, 'nothing-here'), 'unresolved-2');
           const p2 = path.join(proj, 'unresolved-2', 'new.txt');
@@ -367,7 +381,8 @@ async function main(): Promise<void> {
         // regressions without links
         assert.ok(inside(path.join(proj, 'new', 'deep', 'er', 'file.txt'), [proj]), 'FR-320 regression: a plain new file deep inside is inside');
         assert.ok(inside([proj, 'dir1', '..', 'x.txt'].join(path.sep), [proj]), 'FR-320 regression: a path that stays inside is inside');
-        assert.ok(inside([proj, 'missing', '..', 'x.txt'].join(path.sep), [proj]), 'FR-320 regression: missing tail collapsed inside');
+        assert.ok(!inside([proj, 'missing', '..', 'x.txt'].join(path.sep), [proj]), 'FR-320 unresolved-20: a remaining path that would climb back is outside (also on Windows: the safe side)');
+        assert.ok(inside(path.join(proj, 'missing', 'x.txt'), [proj]), 'FR-320 regression: a plain missing tail is inside');
         assert.ok(!inside([proj, 'missing', '..', '..', 'away', 'secret.txt'].join(path.sep), [proj]), 'FR-320 regression: missing tail that leaves the folder is outside');
         assert.ok(!inside([proj, '..', 'away', 'secret.txt'].join(path.sep), [proj]), 'FR-320 regression: a path that leaves the folder is outside');
         assert.ok(inside(path.join(tmp, 'not-yet', 'f.txt'), [path.join(tmp, 'not-yet')]), 'FR-320 regression: a root that does not exist yet still matches its own files');
