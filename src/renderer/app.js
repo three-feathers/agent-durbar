@@ -8650,6 +8650,7 @@ const askDialog=DurbarDialog(document);
 if(window.DurbarProfileEditor)window.DurbarProfileEditor.init({bridge,askDialog,toast:(...x)=>toast(...x),esc:s=>esc(s)});
 /* spec 111 T008: Settings > Team templates (teams.js) uses the same bridge, dialog, toast and announcer */
 /* spec 111 T009: the member editor reads the page's own app, model, permission and character helpers, at the time it opens (KINDS and the model lists load later than this line) */
+if(window.DurbarMemory)window.DurbarMemory.init({bridge,sim:!!SIM,askDialog,announce:(t)=>announce(t)}); /* spec 116 T007 */
 if(window.DurbarTeams)window.DurbarTeams.init({bridge,sim:!!SIM,askDialog,toast:(...x)=>toast(...x),esc:s=>esc(s),announce:(t)=>announce(t),
   editorEnv:()=>({kinds:()=>KINDS?DMK().kindChoices(KINDS):[],kindCaps:id=>kindCaps(id),shows:(c,f)=>DMK().shows(c,f),ensureModels:k=>ensureModels(k),modelsFor:k=>modelsFor(k),
     fillModelSelect:(sel,cur,k)=>fillModelSelect(sel,cur,k),fillEffortSelect:(sel,m,cur,off,k)=>fillEffortSelect(sel,m,cur,off,k),fillPerm:(sel,c,k)=>fillPermSelect(sel,c,k),

@@ -442,6 +442,9 @@
     const teamsSec=window.DurbarTeams&&window.DurbarTeams.shown()&&X.bridge.teamsList?`<section class="scr-sec" aria-labelledby="tmH"><h3 id="tmH">Team templates</h3>
         <p class="scr-note">A template is a saved team: its members, roles and settings. <b>Use…</b> adds that team to a folder. Starting a team does not start any member.</p>
         <div id="teamsBox"></div></section>`:'';
+    /* spec 116 T007 (FR-002): Settings > Office memory, painted by memory.js into #memBox; only under the simulator until the memory note (T009) and the docs (T010) land */
+    const memSec=window.DurbarMemory&&window.DurbarMemory.shown()&&X.bridge.memoryStatus?`<section class="scr-sec" aria-labelledby="memH"><h3 id="memH" tabindex="-1">Office memory</h3>
+        <div id="memBox"></div></section>`:'';
     /* Schedules (spec 044 FR-011): every folder's schedules, painted by app.js into #schedSet */
     const schedSec=X.sched&&X.sched.on()?`<section class="scr-sec" aria-labelledby="schH"><h3 id="schH" tabindex="-1">Schedules</h3>
         <p class="scr-note">Prompts sent to a folder's agent at a time, every day or at an interval, <b>only while Agent Durbar is open</b>.</p>
@@ -558,7 +561,7 @@
         <li>It sends nothing to any server of its own.</li>
         <li>Rooms you hide or switch off still run and cost money.</li></ul></section>`;
     const keep=focus?null:keepPlace(r); /* spec 069 FR-069: a repaint (not the opening) keeps the scroll and the focused control */
-    r.innerHTML=head('Settings')+`<div class="scr-wrap"><div class="scr-cols"><nav class="scr-nav" id="scrNav" aria-label="Settings sections" hidden></nav><div class="scr-body">${hsSec}${pfSec}${detailSec}${worldSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${brainSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${teamsSec}${orgSec}${placesSec}
+    r.innerHTML=head('Settings')+`<div class="scr-wrap"><div class="scr-cols"><nav class="scr-nav" id="scrNav" aria-label="Settings sections" hidden></nav><div class="scr-body">${hsSec}${pfSec}${detailSec}${worldSec}${keySec}${notSec}${themeSec}${charSec}${logoSec}${motionSec}${stillSec}${brainSec}${capSec}${moodSec}${breakSec}${linksSec}${notifySec}${followSec}${schedSec}${floorsSec}${teamsSec}${memSec}${orgSec}${placesSec}
       <details class="scr-adv" id="advMcp"${advOpen?' open':''}><summary><h3 class="scr-adv-h">Advanced: MCP servers (extra tools for agents)</h3><span class="mtag warn" id="advMcpAtt"${live&&live.agg.attention?'':' hidden'}>${esc(attText(live?live.agg.attention:0))}</span></summary>
       <section class="scr-sec" aria-labelledby="mcpH"><h3 id="mcpH" tabindex="-1">MCP servers</h3>
         ${liveSection()}
@@ -605,6 +608,7 @@
     if($('csKeyRec'))wireKeyRec({rec:'csKeyRec',msg:'csKeyMsg',now:'csKeyNow',reset:'csKeyReset'},X.searchKey,'focuses Search conversations'); /* spec 095 FR-003 */
     if(X.sched&&$('schedSet'))X.sched.render();
     if($('teamsBox'))window.DurbarTeams.mount($('teamsBox'));
+    if($('memBox'))window.DurbarMemory.mount($('memBox'));
     /* spec 044 FR-030: the top-bar Schedules button, Ctrl+Shift+S and Ctrl+K open Settings at the Schedules heading (also when Settings is open already) */
     if(cur.section==='schedules'){cur.section=null;const h=$('schH');if(h){scrollInBody(h);h.focus({preventScroll:true});atSec=true;}}
     wireMcpLevels();

@@ -228,17 +228,24 @@ function simTeamsApi(qs: URLSearchParams): Pick<DurbarApi, 'teamsList' | 'teamsP
   };
 }
 /**
- * Spec 116 T003: the simulator's office memory, in memory only (no disk, no dialog, no path from the page). The one "folder" is a temp-folder
- * name; `memoryPick` always offers it with a fake token built at run time; `memoryApply` takes that token once; `memoryStop` clears the state.
+ * Spec 116 T003: the simulator's office memory, in memory only (no disk, no dialog, no path from the page). The one "folder" is a made-up
+ * `~` name; `memoryPick` always offers it with a fake token built at run time; `memoryApply` takes that token once; `memoryStop` clears the state.
  * The words are the real ones (`checkMemoryFolder`'s refusals): a page address `simmemory=refused` makes the pick answer a refusal.
  */
 function simMemoryApi(qs: URLSearchParams): Pick<DurbarApi, 'memoryStatus' | 'memoryPick' | 'memoryApply' | 'memorySetOn' | 'memoryStop' | 'onMemoryChanged'> {
-  const FOLDER = '/tmp/durbar-sim-memory';
-  let folder: string | undefined;
-  let on = false;
+  const FOLDER = '~/notes/brain';
+  // page address `simmemory=on|notfound|refusedstate` seeds the saved folder (Settings shows each state; T007's driver); `refused` and `remote` shape the pick
+  const seed = qs.get('simmemory');
+  let folder: string | undefined = seed === 'on' || seed === 'notfound' || seed === 'refusedstate' ? FOLDER : undefined;
+  let on = seed === 'on';
   let live: string | undefined;
   const subs: Array<(v: import('../shared/api').MemoryStatus) => void> = [];
-  const status = (): import('../shared/api').MemoryStatus => (folder === undefined ? { on: false, state: 'off', keepInGit: false } : { on, path: folder, state: on ? 'on' : 'off', keepInGit: false });
+  const status = (): import('../shared/api').MemoryStatus => {
+    if (folder === undefined) return { on: false, state: 'off', keepInGit: false };
+    if (seed === 'notfound') return { on: false, path: folder, state: 'notFound', keepInGit: false };
+    if (seed === 'refusedstate') return { on: false, path: folder, state: 'refused', reason: 'It is, is inside, or holds a folder of the office: the agents there would be able to write to it.', keepInGit: false };
+    return { on, path: folder, state: on ? 'on' : 'off', keepInGit: false };
+  };
   const push = (): void => { for (const cb of [...subs]) cb(status()); };
   return {
     memoryStatus: async () => status(),

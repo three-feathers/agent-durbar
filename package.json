@@ -173,6 +173,7 @@
     "test:mcpsigninrefresh": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-signinrefresh.js && node dist-scripts/scripts/test-mcp-signinwiring.js && node dist-scripts/scripts/test-mcp-renew.js && node dist-scripts/scripts/test-mcp-presend.js",
     "test:mcpswitchpersist": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcp-switchpersist.js",
     "test:mcpwords": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-mcpwords.js",
+    "test:memory-ui": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memory-ui.js",
     "test:memoryfolder": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memoryfolder.js",
     "test:memoryops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memoryops.js",
     "test:memoryremote": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memoryremote.js",
