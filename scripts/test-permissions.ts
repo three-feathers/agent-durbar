@@ -229,6 +229,7 @@ async function main(): Promise<void> {
     const MUT: Record<string, [string, string]> = {
       jsRealpath: ['return fs.realpathSync.native(x);', 'return fs.realpathSync(x);'],
       noFallback: ['return fs.realpathSync(x);', 'throw e;'],
+      normIdentity: ['const norm = (x: string): string => (ci ? x.toLowerCase() : x);', 'const norm = (x: string): string => x;'],
       posixFold: ["opts.caseInsensitive ?? process.platform === 'win32'", 'opts.caseInsensitive ?? true'],
     };
     const mut = process.env.PERMISSIONS_MUTANT || '';
@@ -254,6 +255,7 @@ async function main(): Promise<void> {
     } finally {
       real.native = savedNative;
     }
+    assert.ok(inside('/Users/x/PROJ/a', ['/users/x/proj'], { flavor: path.posix, caseInsensitive: true, realpath: (x) => x }), 'posix with caseInsensitive folds case');
     // default case rule: only Windows folds case, so on Linux and macOS `/Work/a` is not inside `/work`
     if (process.platform !== 'win32') assert.ok(!inside('/Work/a', ['/work'], { flavor: path.posix, realpath: (x) => x }), 'default case rule: posix does not fold case');
   }
