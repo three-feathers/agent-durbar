@@ -453,7 +453,7 @@ module.exports = async (ctx) => {
         const pl=nb&&nb.previousElementSibling,runs=()=>pl?pl.getAnimations().filter(n=>!n.animationName&&n.playState==='running'&&n.effect&&n.effect.getKeyframes().some(f=>f.translate||f.scale)):[];
         const n0=runs().length;
         if(!nb||!gone||!had||!n0||(${jsLiteral(gap)}>0&&n0<2))return {k,had,gone,made:!!nb,running:n0};
-        if(${jsLiteral(third)})setTimeout(()=>{if(pl.isConnected)pl.animate([{translate:'28px 0'},{translate:'0 0'}],{duration:300,easing:'ease-out'})},90); /* an ease no draw made */
+        if(${jsLiteral(third)})setTimeout(()=>{if(pl.isConnected)pl.animate([{translate:'28px 0'},{translate:'0 0'}],{duration:600,easing:'ease-out'})},400); /* an ease no draw made, begun late so it outlasts the first two */
         const geo=()=>({win:[innerWidth,innerHeight],screen:[screen.width,screen.height],at:[screenX,screenY],dpr:devicePixelRatio}),fr=[];
         const M=window.__peM={max:0,n:0,done:false,final:null,frames:fr,geo:geo()},t0=performance.now();let end=0;
         const step=()=>{const now=performance.now(),o=Number(getComputedStyle(nb).opacity),e=runs();M.n++;if(e.length){if(o>M.max)M.max=o;}else if(!end)end=now;
