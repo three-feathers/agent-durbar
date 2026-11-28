@@ -79,3 +79,16 @@ export class MemoryNote {
     } catch { return undefined; }
   }
 }
+
+/**
+ * The memory folder(s) each session was STARTED with: `ask` records what a start asked the adapter to read (the draft or agent object, before the id is
+ * known), `begin` ties it to the session id once the start has gone through, `of` is what `MemoryNote` is given. A session never started with the memory on
+ * has none, so it is offered no note (it cannot read the folder).
+ */
+export class StartRoots {
+  private readonly asked = new WeakMap<object, readonly string[]>();
+  private readonly started = new Map<string, readonly string[]>();
+  ask(a: object, roots: readonly string[] | undefined): void { this.asked.set(a, roots ?? []); }
+  begin(id: string, a: object): void { this.started.set(id, this.asked.get(a) ?? []); }
+  of(id: string): readonly string[] { return this.started.get(id) ?? []; }
+}

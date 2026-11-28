@@ -36,10 +36,12 @@ const MUTANTS: Record<string, Mut> = {
   claimless: { kind: 'js', mod: 'main/notesent', from: 'this.claimed.add(key);', to: '', section: 'restart' },
   previewNotCompared: { kind: 'js', mod: 'main/memorynote', from: 'b.text !== p.text ||', to: '', section: 'note' },
   offStillBuilds: { kind: 'js', mod: 'main/memorynote', from: 'this.d.roots(agentId)[0]', to: "this.d.roots(agentId)[0] ?? '/example.invalid/brain'", section: 'failclosed' },
+  startRootNotAsked: { kind: 'js', mod: 'main/memorynote', from: 'this.asked.set(a, roots ?? []);', to: 'this.asked.set(a, []);', section: 'startroot' },
+  startRootNotBegun: { kind: 'js', mod: 'main/memorynote', from: 'this.started.set(id, this.asked.get(a) ?? []);', to: 'this.started.set(id, []);', section: 'startroot' },
   startRootIgnored: { kind: 'js', mod: 'main/memorynote', from: 'this.d.startRoots(agentId)[0] !== dir', to: 'false', section: 'startroot' },
   maskChangeAllowed: { kind: 'js', mod: 'main/memorynote', from: "chain && chain.text === [part.open(nonce), part.body, part.close(nonce)].join('\\n')", to: 'chain', section: 'failclosed' },
   trimOnWriteMissing: { kind: 'js', mod: 'main/notesent', from: 'this.list = this.list.slice(-exports.MAX_SENT);', to: '', section: 'restart' },
-  startRootNotRecorded: { kind: 'src', file: 'src/main/main.ts', from: 'memoryStartRoots.set(a.id, memoryRootsAsked.get(a) ?? []);', to: '', section: 'wiring' },
+  startRootNotRecorded: { kind: 'src', file: 'src/main/main.ts', from: 'noteStartRoots.begin(a.id, a);', to: '', section: 'wiring' },
   hiddenPathAccepted: { kind: 'js', mod: 'main/memorynote', from: 'unhide)(dir) !== dir ||', to: 'unhide)(dir) === 7 ||', section: 'failclosed' },
   ipcTypedNoGate: { kind: 'src', file: 'src/main/ipc/agents.ts', from: 'const typed = fromApp(e) && ', to: 'const typed = ', section: 'wiring' },
   rendererHandoverCarries: { kind: 'src', file: 'src/renderer/app.js', from: 'opts&&opts.typed===true&&fromComposer&&memNoteFor===a.id', to: 'memNoteFor===a.id', section: 'wiring' },
@@ -242,6 +244,17 @@ section('failclosed', () => {
   ok(!/Start with:/.test(h.text) && !h.text.includes('[End of memory note 0123456789abcdef]'), 'names that only look like entries never reach the text');
 });
 section('startroot', () => {
+  // behaviour: a session started with the memory on records its start root, so the note is offered; one started without it, or never recorded, gets none
+  { const mk = (sr: { of(id: string): readonly string[] }): InstanceType<typeof noteMod.MemoryNote> => new noteMod.MemoryNote({ roots: () => ['/example.invalid/brain'], startRoots: (id: string) => sr.of(id), names: () => ['README.md'], keyOf: (_i: string, d: string) => 'k|' + d, sent: { has: () => false, claim: () => true, release() { /* */ }, commit() { /* */ } } });
+    const sr = new noteMod.StartRoots(); const draft = {}; sr.ask(draft, ['/example.invalid/brain']); sr.begin('s1', draft);
+    ok(mk(sr).preview('s1'), 'a session started with the memory on (its start asked for the folder) is offered the note');
+    const off = new noteMod.StartRoots(); const d2 = {}; off.ask(d2, undefined); off.begin('s2', d2);
+    eq(mk(off).preview('s2'), undefined, 'a session started with the memory off has no start root: no note');
+    eq(mk(new noteMod.StartRoots()).preview('s3'), undefined, 'a session never recorded: no note');
+    const other = new noteMod.StartRoots(); const d4 = {}; other.ask(d4, ['/example.invalid/other']); other.begin('s4', d4);
+    eq(mk(other).preview('s4'), undefined, 'a session started with another folder: no note');
+    const later = new noteMod.StartRoots(); const d5 = {}; later.begin('s5', d5); later.ask(d5, ['/example.invalid/brain']);
+    eq(mk(later).preview('s5'), undefined, 'asking after the start was recorded changes nothing'); }
   eq(world({ start: [] }).note.preview('a'), undefined, 'a session started before the memory was on has no read root: no note');
   eq(world({ start: ['/example.invalid/old'] }).note.preview('a'), undefined, 'a session started with another folder cannot read the live one: no note');
   ok(world({ start: ['/example.invalid/brain'] }).note.preview('a'), 'the live folder is the one the session started with: the note goes');
@@ -592,8 +605,8 @@ section('wiring', () => {
   const memIpc = source('src/main/ipc/memory.ts');
   ok(/'memory:notePreview', \(e, agentId: unknown\) => \(!fromApp\(e\) \? NO/.test(memIpc), 'memory:notePreview is checked with fromApp');
   ok(source('scripts/test-ipcchannels.ts').includes("'memory:notePreview'"), 'the channel is in test:ipcchannels list of window-only channels');
-  eq(main.split('memoryStartRoots.set(').length - 1, 2, 'both starts (new session, lazy start) record the folders the session started with');
-  ok(main.includes('startRoots: (id) => memoryStartRoots.get(id) ?? [],'), 'the note is given the start roots');
+  eq(main.split('noteStartRoots.begin(').length - 1, 2, 'both starts (new session, lazy start) record the folders the session started with');
+  ok(main.includes('startRoots: (id) => noteStartRoots.of(id),') && main.includes('noteStartRoots.ask(a, base.readOnlyFolders);'), 'the note is given the start roots, and a start records what it asked for');
   ok(main.includes('fingerprint(app, resumeIdFor(id), folder)'), 'the once-key holds the memory folder');
 });
 
