@@ -321,3 +321,4 @@ test:prpreflight
 test:prready
 test:pencilpark
 test:arcade-wall-signs
+test:force-blur
