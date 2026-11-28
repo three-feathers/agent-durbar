@@ -335,6 +335,15 @@ Each has a recommendation (Q6 is for Paco, the crew owner). The build waits for 
 
 ## Changes
 
+### 2026-11-28: the forced blur of the focus drivers is skipped, printed, where the OS refuses it (issue #2167; T611; no FR; no app change; drivers `shots-097-moments` and `check-102-arcade-labels`)
+
+**Main went red** on the Windows UI shards after the T606 and T607 deltas: `the window is blurred, so the page reports no focus (the setup of the ...)` failed twice. **Cause:** those drivers asserted that `H.loseFocus()` succeeds; on Windows a window cannot be made to give up the OS focus when nothing else takes it, so `blur()` leaves `document.hasFocus()` true there (the first-try failure of #2167 needed a neighbour window to take it). The evidence of those PRs was Linux only.
+
+- **Fix (drivers and helper only):** `H.forceBlur(driver, tag, step)` in `scripts/driver-helpers.js` (extends `loseFocus`, FR-031): true when the OS honours the blur; otherwise it prints one `[focus] <driver> <tag> (<step>): this OS did not release the window focus on blur(): the forced-blur setup is skipped here (...)` line and returns false. Both drivers call it as a plain statement.
+- **The skip removes the SETUP assert only:** the step goes on in full (`needFocus` by state, then the product's asserts: the Answer and Skip ring in `shots-097-moments`, the message box focus-visible in `check-102-arcade-labels`). On Linux and macOS the blur is honoured and the red case is as before; `MOMENTS_BLUR=0`, `ARCADE_LABELS_BLUR=0` and the `nofocus` mutants stay. This **replaces** the lines of the 2026-11-28 T606 delta above and of the spec 102 T607 delta that say the driver asserts the page reports no focus: it asserts that where the OS honours the blur.
+- **Test without Electron:** `test:force-blur` (stub window that honours or refuses `blur()`): honoured is true and silent; refused is false, prints exactly one line naming driver, tag and step, and does not throw; a driver that fails on a refused blur dies at a named assert; a source scan (CRLF-safe) of both drivers proves the call is a plain awaited statement followed by `needFocus`, and a mutant copy with an early return on a refused blur dies at `does not end the step early`.
+- `[KNOWN GAP]` Windows itself: the refused-blur path is exercised by the stub on Linux; the proof is the Windows shards of main after the merge.
+
 ### 2026-11-28: `shots-097-moments retro` asks for the window focus before the Answer and Skip ring steps (issue #2167; T606; no FR; no app change)
 
 **Found counting first-try failures on the Windows UI shards** (issue #2167): `retro 1440x900: Answer shows a keyboard focus ring (solid, 2px or more, 3:1 on the card): {"on":false,"style":"none","width":3,"ring":1.22...}` failed the first try and passed on the suite's retry. **Cause:** the question-card cell loaded the arcade page without the focus and called `.focus()` on Answer and Skip, then read the resolved outline. On a Windows runner three drivers share one desktop and a neighbour's window takes the OS focus, so `:focus-visible` does not match. The product is right (with the focus the ring shows). Driver only.
