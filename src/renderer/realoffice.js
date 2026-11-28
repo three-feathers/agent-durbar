@@ -75,7 +75,7 @@
     /* held until the plate's own eases end (their `finished`), not for a time of its own: a plate's ease can start a frame after the pencil's hold
        (measured in the cave, 17 ms), and a timed hold then ended while the plate still moved (review of PR 1555) */
     const h = e._hide = e.animate([{ opacity: 0 }, { opacity: 0 }], { duration: Infinity });
-    const show = () => { if (e._hide !== h) return; h.cancel(); e._hide = e.animate([{ opacity: 0 }], { duration: REN_IN, easing: 'linear' }); }; /* one keyframe: it ends on the CSS opacity (hover, focus, ren-show) */
+    const show = () => { if (e._hide !== h) return; h.cancel(); e._hide = e.animate([{ opacity: 0 }, {}], { duration: REN_IN, easing: 'linear' }); }; /* from 0 up to the CSS opacity (hover, focus, ren-show): the empty end keyframe is the element's own value; a lone `{ opacity: 0 }` is the END keyframe (offset 1), so it faded from the CSS value DOWN to 0 and popped back (issue #2193) */
     const wait = (list, round) => Promise.allSettled([...new Set(list)].map((a) => a.finished)).then(() => {
       if (e._hide !== h) return;
       const more = round < HOLD_ROUNDS && plate ? easesOf(plate) : [];
