@@ -303,3 +303,6 @@ Numbers taken: T167..T183. Each phase one small PR, after #950 and #959 land (#9
 
 ## 2026-11-24: a place name is not cut by half a pixel (issue #2078)
 - [x] T495 (delta 2026-11-24, issue #2078): need +1 px and the `extra` parameter of `lobbyFit` (`src/renderer/places.js`), the two-pass fit in `lobbyHTML` (`src/renderer/app.js`); `bossMin(iw)` (one source of the Boss minimum for `lobbyFit` and the driver); `check-097-textfit` fails a cut place name while the Boss tile can give (fractional widths); `test:places` cases [FR-039]
+
+## 2026-11-28: `check-status-tooltip` and a window that loses the focus (issue #2167)
+- [x] T609 Issue 2167 (2026-11-28 *Changes*): `scripts/check-status-tooltip.js`: `hover` leaves a pill the pointer rests on first, the pointer step runs in `osRetry`, the window is blurred (`H.loseFocus`) with the pointer on the pill before the first hover and before the pointer step; `TOOLTIP_BLUR=0` plain run; mutant `TOOLTIP_MUTANT=noreenter` dies at the Windows run's assert text; no app change.

@@ -12,6 +12,7 @@
  * redraw (folder filter) while it is shown updates its text; the pill going away hides it; scroll, window blur and resize hide it. Then the
  * same check (shown, inside, clear, contrast 4.5:1 for 12px text) in every built-in theme, a dark user theme and Serious mode. Every wait is
  * until() and its result is asserted. A miss prints DRIVER FAILED (Electron still exits 0), so the check is "all checks passed" printed.
+ * TOOLTIP_BLUR=0 turns off the blur forced while the pointer rests on a pill (issue 2167); TOOLTIP_MUTANT=noreenter hovers without leaving a resting pill first (must fail).
  *   OUT=docs/screenshots  (optional) also saves 001-status-tooltip-{1440x900,1280x800}.png
  */
 const assert = require('assert');
@@ -37,6 +38,8 @@ module.exports = async (ctx) => {
   // mouse moves sent back to back are merged by the page, so each move waits until the page has seen it (:hover)
   const away = async () => { await move(1, 1); await ok(`!document.querySelector('#stats .stat[data-k]:hover')`, 'the pointer left the counts', 3000); };
   const hover = async (k) => {
+    // issue 2167: a window blur clears the tooltip's pointer state while the pointer rests on the pill, and a move inside the same element sends no new pointerover, so the pointer leaves first (TOOLTIP_MUTANT=noreenter does not: it must fail at the first hover)
+    if (process.env.TOOLTIP_MUTANT !== 'noreenter' && await js(`document.querySelector(${jsLiteral(pill(k))}).matches(':hover')`)) await away();
     for (let i = 0; i < 4; i++) { // the first moves can be lost while the OS activates the window
       const p = await rectOf(k); await move(p.x - 1, p.y); await move(p.x, p.y);
       if (await until(`document.querySelector(${jsLiteral(pill(k))}).matches(':hover')`, 1500)) return;
@@ -52,6 +55,9 @@ module.exports = async (ctx) => {
   const osEvents = () => js(`(window.__osEv||[]).join(',')`);
   // T371 (#1664): the shared focus precheck (H.needFocus, FR-031): a window the OS did not activate has no :focus-visible; fails with the label, not at a product assertion; STATUSTIP_NO_WINDOW_FOCUS=1 is the mutant (reading false)
   const focusWin = (what) => H.needFocus(what, process.env.STATUSTIP_NO_WINDOW_FOCUS ? { expr: 'false' } : {});
+  // issue 2167: on a Windows shard three drivers share one desktop and a neighbour's window takes the OS focus while the pointer rests on a pill. The window is blurred on purpose at that point (TOOLTIP_BLUR=0 turns that off) and the page is asserted to report no focus; the step then asks for the real focus by state
+  const BLUR = process.env.TOOLTIP_BLUR !== '0';
+  const blurFirst = async (tag, step) => { if (BLUR) assert.ok(await H.loseFocus(), tag + ': the window is blurred, so the page reports no focus (the setup of the ' + step + ' step)'); };
   const osRetry = async (what, fn) => {
     for (let i = 0; ; i++) {
       await focusWin(what); await osWatch();
@@ -98,6 +104,7 @@ module.exports = async (ctx) => {
 
     // hover: each count, at once, with its state and count; moving away hides it
     for (const k of KEYS) {
+      if (k === 'working') { await hover(k); await blurFirst(tag, 'hover'); } // the pointer rests on the pill when the window loses the focus
       await hoverShown(k, `${tag}: hovering ${k} shows the tooltip`);
       const n = await count(k);
       assert.strictEqual(await tipText(), expected(k, n, false), `${tag}: ${k} text: ${await tipText()}`);
@@ -157,9 +164,14 @@ module.exports = async (ctx) => {
       assert.strictEqual(await tipText(), expected('idle', await count('idle'), await on('idle')), `${tag}: the text follows the redraw: ${await tipText()}`);
       checkGeo(await geo('idle'), 'idle', `${tag} after redraw`);
       // a pointer event on the empty floor while the pill is hovered (a redraw moves what is under a still pointer; Windows sends it): the floor has no hint here (one floor), so the pill keeps its tooltip
-      await js(`document.getElementById('floor').dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'}))`);
-      await H.settle();
-      await ok(shown, `${tag}: a pointer event on a floor with no hint leaves the pill's tooltip shown`);
+      await blurFirst(tag, 'pointer');
+      await osRetry(`${tag}: pointer`, async () => {
+        await hover('idle');
+        await ok(shown, `${tag}: shown before the pointer event`, 1500);
+        await js(`document.getElementById('floor').dispatchEvent(new PointerEvent('pointerover',{bubbles:true,pointerType:'mouse'}))`);
+        await H.settle();
+        await ok(shown, `${tag}: a pointer event on a floor with no hint leaves the pill's tooltip shown`);
+      });
       checkGeo(await geo('idle'), 'idle', `${tag} after a pointer event on the floor`);
       await js(`(()=>{const s=document.getElementById('wsFilter');s.value='all';s.dispatchEvent(new Event('change'))})()`);
       await H.settle();

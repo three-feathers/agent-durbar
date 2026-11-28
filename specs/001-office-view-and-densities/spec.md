@@ -143,6 +143,14 @@ Animations are subtle, CSS-only in compact densities and stop under reduced-moti
 
 ## Changes
 
+### 2026-11-28: `check-status-tooltip` copes with a window that loses the focus while the pointer rests on a pill (issue #2167, T609, driver only, no new FR)
+
+*Report* (issue #2167, Windows shards run three drivers on one desktop): first try failed twice with `hovering working shows the tooltip (no window blur, resize or scroll came)` and `a pointer event on a floor with no hint leaves the pill's tooltip shown`; the retry passed.
+- **Reproduced on Linux (xvfb, DejaVu) before the fix**: a hover does not need the OS focus (the working hover shows with the window blurred), so the focus ask is not the cause. A window blur clears the tooltip's pointer state (FR-187) while the pointer rests on the pill; a move inside the same pill sends no new `pointerover`, so the tooltip never comes back, and a blur that came before `osWatch` starts is not counted: the text is the Windows one. With the window blurred after a hover (`H.loseFocus()`), the pointer step failed with `shown before the pointer event (no window blur, resize or scroll came)`.
+- **Fix (driver only):** `hover(k)` first leaves the pill when the pointer already rests on it (`away()`), so every hover is a new `pointerover`; the pointer step runs inside `osRetry` (focus by state, `osWatch`, retry on a trusted blur). The product is unchanged.
+- **Deterministic red case on every machine:** the pointer rests on the Working pill, the window is blurred (`H.loseFocus()`), the page is asserted to report no focus, then the driver hovers; the pointer step is blurred the same way. `TOOLTIP_BLUR=0` turns the forced blur off (the plain run). Mutant `TOOLTIP_MUTANT=noreenter` (a code path of the driver: no text to patch, no CRLF case) dies at `hovering working shows the tooltip (no window blur, resize or scroll came)`, the text of the Windows run.
+- `[KNOWN GAP]` Windows itself (the condition is forced on Linux; the proof is the retry count of the Windows shards after the merge). A Windows window that gets the focus taken with no blur event is not shown here.
+
 ### 2026-11-19: room heads are readable and findable: the whole head says its folder, a cut name keeps its end, a new folder is shown (issue #1905, FR-270..FR-272)
 
 *Report* (Paco, owner, 2026-11-19, v0.1.24, macOS, flat office, about 16 folders, All floors): the narrower room heads read `itdse-ism…`, `iot-platfor…`, `2026-07-…`, `iot-platform-…`; several start alike, so they cannot be told apart; hovering the head showed nothing; a cut floor chip (`Op…`) says nothing; and after adding a folder the office neither went to its room nor marked it.
