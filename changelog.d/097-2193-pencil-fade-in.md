@@ -1,0 +1,1 @@
+- **A rename pencil no longer flickers when it appears after a move** (spec 097): it faded out and popped back for a moment; it now fades in.

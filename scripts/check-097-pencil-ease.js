@@ -24,6 +24,7 @@
  *                "a pencil made while its plate eases is held at opacity 0 until the ease ends"
  *     skipall    the 3-frame rule skipped as if no plate that eases were in view: fails "with every plate in view and on the screen, some plate that eases is in view, so the 3-frame rule has a plate to catch" at the first size
  *     firstonly  the hold of a pencil made while two plate eases overlap is the first ease only (`hideWhile(rb, [mv], null)`): dies in the two-ease and three-ease cases at the same text
+ *     onekey     the fade-in after a hold is the one-keyframe form `[{ opacity: 0 }]` (it fades the pencil from fully visible DOWN to 0, then pops back: issue #2193): dies in every made-pencil case at "a pencil fades in after its hold, never out"
  *     norecheck  the hold does not look at the plate again after the eases it started with end: dies in the three-ease case (a third ease, begun meanwhile) at the same text
  *     pin        the pointer back on a working plate after parking (it did not leave): fails "the hover card closed after the pointer left"; with PENCIL_EASE_SCREEN smaller than the
  *                window it is the labelled "skipped: the pointer-dependent checks ... need the window inside the screen" instead
@@ -158,6 +159,7 @@ module.exports = async (ctx) => {
   /* a patched copy of dist, each mutant of realoffice.js with a loud guard first (a CRLF checkout, or a moved line, must not leave a mutant a no-op) */
   const PATCH = {
     freshease: ['const mv = plEase || (fresh ? easeOf(pl) : null);', 'const mv = plEase || null;'],
+    onekey: ['e._hide = e.animate([{ opacity: 0 }, {}], { duration: REN_IN', 'e._hide = e.animate([{ opacity: 0 }], { duration: REN_IN'],
     firstonly: ['hideWhile(rb, [mv, ...easesOf(pl)], pl);', 'hideWhile(rb, [mv], null);'],
     norecheck: ['const more = round < HOLD_ROUNDS && plate ? easesOf(plate) : [];', 'const more = [];'],
   };
@@ -457,7 +459,7 @@ module.exports = async (ctx) => {
         const geo=()=>({win:[innerWidth,innerHeight],screen:[screen.width,screen.height],at:[screenX,screenY],dpr:devicePixelRatio}),fr=[];
         const M=window.__peM={max:0,n:0,done:false,final:null,frames:fr,geo:geo(),third:${jsLiteral(third)}?{at:null,running:0,left:null}:null},t0=performance.now();let end=0;
         const step=()=>{const now=performance.now(),o=Number(getComputedStyle(nb).opacity),e=runs();M.n++;if(e.length){end=0;if(o>M.max)M.max=o;}else if(!end)end=now;
-          if(fr.length<80)fr.push([Math.round(now-t0),Math.round(o*100)/100,e.map(x=>Math.round(x.startTime||0)+'/'+Math.round(x.effect.getTiming().duration)+'/'+Math.round(x.currentTime||0)).join(' '),nb._hide?'hold':'-']);
+          if(fr.length<160)fr.push([Math.round(now-t0),Math.round(o*100)/100,e.map(x=>Math.round(x.startTime||0)+'/'+Math.round(x.effect.getTiming().duration)+'/'+Math.round(x.currentTime||0)).join(' '),nb._hide?'hold':'-']);
           const T=M.third;if(T&&T.at===null&&e.length&&pl.isConnected){const left=Math.max(...e.map(x=>x.effect.getComputedTiming().endTime-(x.currentTime||0)));
             if(left<=Math.max(...e.map(x=>x.effect.getTiming().duration))/2){T.at=Math.round(now-t0);T.running=e.length;T.left=Math.round(left);pl.animate([{translate:'28px 0'},{translate:'0 0'}],{duration:600,easing:'ease-out'})}}
           if((end&&now-end>300)||now-t0>4000){M.done=true;M.final=o}else requestAnimationFrame(step)};
@@ -472,6 +474,9 @@ module.exports = async (ctx) => {
       if (M.third) assert.ok(M.third.at !== null && M.third.running >= 1, `${tag}: ${what}: the third ease is begun while the plate's own eases still run (${JSON.stringify(M.third)}; ${diag()})`);
       assert.ok(M.max < 0.05, `${tag}: a pencil made while its plate eases is held at opacity 0 until the ease ends (${what}: highest ${M.max} in ${M.n} frames; ${diag()})`);
       assert.ok(M.final >= 0.99, `${tag}: and it is shown once the last ease is over (${what}: opacity ${M.final})`);
+      /* issue #2193: after the hold ends the pencil fades IN (from 0 to its CSS opacity over 120 ms), never out: the frames after the last ease (state: no plate ease runs) are non-decreasing */
+      const post = M.frames.filter((f) => f[2] === '').map((f) => f[1]);
+      assert.ok(post.length >= 3 && post.every((o, i) => i === 0 || o >= post[i - 1] - 0.02), `${tag}: a pencil fades in after its hold, never out (${what}: opacity per frame after the last ease ${post.join(' ')})`);
       await must(STILL, `${tag}: still after the made pencil's eases (${what})`, 8000);
     }
     log(tag, 'status changes:', blinks.join('; '));
