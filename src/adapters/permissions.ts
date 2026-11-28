@@ -207,7 +207,8 @@ function realOrNearest(p: string, o: Required<Pick<PathCheckOptions, 'flavor' | 
 export function isInsideRoots(p: string | undefined, roots: readonly string[], opts: PathCheckOptions = {}): boolean {
   if (!p || !roots.length) return false;
   const flavor = opts.flavor ?? path;
-  const realpath = opts.realpath ?? ((x: string) => fs.realpathSync(x));
+  // Native, not the JS `fs.realpathSync`: it keeps Windows 8.3 short names (`RUNNER~1`), while the roots built elsewhere (`addkey`, `memoryops`, Codex, `main`) are the long form (spec 003 FR-319). The path and every root go through this one function.
+  const realpath = opts.realpath ?? ((x: string) => fs.realpathSync.native(x));
   const ci = opts.caseInsensitive ?? process.platform === 'win32';
   const o = { flavor, realpath };
   const norm = (x: string): string => (ci ? x.toLowerCase() : x);
