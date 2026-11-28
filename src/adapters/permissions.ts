@@ -192,32 +192,72 @@ export function brokerRealpath(x: string): string {
   } catch (e) {
     const code = (e as NodeJS.ErrnoException | undefined)?.code;
     if (code === 'ENOENT' || code === 'ENOTDIR') throw e;
+    // the JS resolver reads a path differently from the OS: it is the fallback on Windows only, elsewhere the path counts as outside (spec 003 FR-320)
+    if (process.platform !== 'win32') throw e;
     return fs.realpathSync(x);
   }
 }
 
-/** Real path of `p`; when it does not exist yet, the real path of its nearest existing ancestor plus the rest. */
-function realOrNearest(p: string, o: Required<Pick<PathCheckOptions, 'flavor' | 'realpath'>>): string {
+const MAX_WALK = 64;
+const MAX_LINKS = 40;
+
+/** Join without collapsing anything: the OS resolves the path itself (spec 003 FR-320). */
+function rawJoin(base: string, p: string, pm: PathCheckOptions['flavor'] & object): string {
+  // Windows: a path with no drive (`\tmp\a`, `C:a`) belongs to the drive or folder of `base`; the OS reads it as text, so resolving it here loses nothing
+  if (pm.sep === '\\' && !/^[\\/]{2}/.test(p) && (/^[\\/]/.test(p) || /^[A-Za-z]:(?![\\/])/.test(p))) return pm.resolve(base, p);
+  return pm.isAbsolute(p) ? p : base.replace(/[\\/]+$/, '') + pm.sep + p;
+}
+
+const codeOf = (e: unknown): string | undefined => (e as NodeJS.ErrnoException | undefined)?.code;
+const isMissing = (e: unknown): boolean => codeOf(e) === 'ENOENT' || codeOf(e) === 'ENOTDIR';
+
+/**
+ * Real path of `p`, or `undefined` when it cannot be resolved (the caller counts that as outside, fail closed; spec 003 FR-320).
+ * Only a missing tail under a resolved folder stays inside; anything else that cannot be resolved is `undefined`.
+ */
+function realOrNearest(p: string, o: Required<Pick<PathCheckOptions, 'flavor' | 'realpath'>>): string | undefined {
   const pm = o.flavor;
   let cur = p;
-  const rest: string[] = [];
-  for (let i = 0; i < 64; i++) {
+  let rest: string[] = [];
+  let links = 0;
+  let steps = 0;
+  for (;;) {
     try {
       const real = o.realpath(cur);
-      return rest.length ? pm.resolve(real, ...rest.reverse()) : real;
-    } catch {
-      const up = pm.dirname(cur);
-      if (up === cur) break;
-      rest.push(cur.slice(up.length).replace(/^[\\/]+/, ''));
-      cur = up;
+      if (rest.includes('..')) return undefined; // a remaining path that would climb back is outside (spec 003 FR-320)
+      return pm.resolve(real, ...rest);
+    } catch (e) {
+      if (!isMissing(e)) return undefined;
     }
+    const up = pm.dirname(cur);
+    let target: string | undefined;
+    // a trailing separator makes the OS follow the link: look at the link itself (a bare root stays as it is)
+    const sepEnd = pm.sep === '\\' ? /[\\/]+$/ : /\/+$/;
+    const bare = cur.replace(sepEnd, '');
+    const linkPath = bare === '' || /^[A-Za-z]:$/.test(bare) ? cur : bare;
+    try {
+      if (fs.lstatSync(linkPath).isSymbolicLink()) {
+        if (++links > MAX_LINKS) return undefined;
+        const t = fs.readlinkSync(linkPath);
+        target = pm.isAbsolute(t) ? t : pm.dirname(linkPath).replace(sepEnd, '') + pm.sep + t;
+      }
+    } catch (e) {
+      if (!isMissing(e)) return undefined;
+    }
+    if (target !== undefined) {
+      cur = target;
+      steps = 0;
+      continue;
+    }
+    if (up === cur || ++steps > MAX_WALK) return undefined;
+    rest = [cur.slice(up.length).replace(pm.sep === '\\' ? /^[\\/]+/ : /^\/+/, ''), ...rest];
+    cur = up;
   }
-  return p;
 }
 
 /**
- * Is `p` inside one of `roots`? Relative paths resolve against the first root; `..` is collapsed and symlinks are resolved
- * (a link inside a root that points outside counts as outside). A missing or empty path is outside.
+ * Is `p` inside one of `roots`? Relative paths resolve against the first root; symlinks are resolved
+ * (a link inside a root that points outside counts as outside). A missing or empty path, or one whose real location cannot be resolved, is outside.
  */
 export function isInsideRoots(p: string | undefined, roots: readonly string[], opts: PathCheckOptions = {}): boolean {
   if (!p || !roots.length) return false;
@@ -227,9 +267,13 @@ export function isInsideRoots(p: string | undefined, roots: readonly string[], o
   const ci = opts.caseInsensitive ?? process.platform === 'win32';
   const o = { flavor, realpath };
   const norm = (x: string): string => (ci ? x.toLowerCase() : x);
-  const target = norm(realOrNearest(flavor.resolve(roots[0], p), o));
+  const real = realOrNearest(rawJoin(flavor.resolve(roots[0]), p, flavor), o);
+  if (real === undefined) return false;
+  const target = norm(real);
   return roots.some((r) => {
-    const root = norm(realOrNearest(flavor.resolve(r), o));
+    const resolved = realOrNearest(rawJoin(flavor.resolve('.'), r, flavor), o);
+    if (resolved === undefined) return false;
+    const root = norm(resolved);
     const rel = flavor.relative(root, target);
     return rel === '' || (rel !== '..' && !rel.startsWith('..' + flavor.sep) && !flavor.isAbsolute(rel));
   });

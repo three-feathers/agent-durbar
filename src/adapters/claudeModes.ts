@@ -165,7 +165,7 @@ export function writeIsInsideRoots(toolName: string, input: ToolInput, roots: re
 
 /**
  * Is a read tool call inside the session's roots? Same rule as the Copilot broker's `readIsOutside`
- * (`isInsideRoots`: `..` collapsed, symlinks resolved), with one difference: no roots given counts as OUTSIDE here,
+ * (`isInsideRoots`: symlinks resolved, an unresolvable path is outside), with one difference: no roots given counts as OUTSIDE here,
  * because the broker is only built with roots and this module must never widen by omission.
  */
 export function readIsInsideRoots(toolName: string, input: ToolInput, roots: readonly string[] | undefined, pathCheck?: PathCheckOptions, readRoots?: readonly string[]): boolean {
