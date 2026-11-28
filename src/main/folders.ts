@@ -418,7 +418,10 @@ export class FolderStore {
   private folders: SavedFolder[] = [];
   private orderDoc: OrderDoc = emptyOrder();
   private floorsDoc: FloorsDoc = floorOps.defaultFloors();
+  /** Spec 116 T008: runs after the saved list gained or lost a folder (main: `memoryOps.recheck()`); never throws into the caller. */
+  onListChange: (() => void) | undefined;
   constructor(private readonly file: string) {}
+  private listChanged(): void { try { this.onListChange?.(); } catch { /* the change already happened */ } }
 
   load(): SavedFolder[] {
     let legacy = false;
@@ -436,6 +439,7 @@ export class FolderStore {
     // A folder pointing at a floor that is gone is on the ground floor (FR-014).
     for (const f of this.folders) if (f.floor && floorOps.floorOf(f.floor, this.floorsDoc) === floorOps.GROUND) f.floor = undefined;
     if (legacy) this.save(); // spec 017 FR-034: the old `closed` flags are dropped from the file now, not at some later save
+    this.listChanged();
     return this.list();
   }
 
@@ -526,6 +530,7 @@ export class FolderStore {
       if (entry.floor !== undefined) this.floorsDoc = { ...this.floorsDoc, lastFloor: floor };
     }
     this.save();
+    if (!cur) this.listChanged();
   }
 
   setHidden(workspace: string, hidden: boolean): boolean {
@@ -716,7 +721,7 @@ export class FolderStore {
       const list = (cur.sessionNames ?? []).filter((x) => !entries.some((e) => e.src === x.src && e.id === x.id));
       cur.sessionNames = [...list, ...entries].slice(-MAX_SESSION_NAMES);
     }
-    if (this.save()) return true;
+    if (this.save()) { if (created) this.listChanged(); return true; }
     if (created) this.folders = this.folders.filter((f) => f !== cur);
     else { cur.team = before.team; cur.sessionNames = before.sessionNames; }
     return false;
@@ -736,7 +741,7 @@ export class FolderStore {
     if (prev) cur.team = prev; else delete cur.team;
     cur.sessionNames = parseSessionNames(previousNames);
     if (removeRoom && !prev) this.folders = this.folders.filter((f) => f !== cur);
-    if (this.save()) return true;
+    if (this.save()) { if (this.folders !== before.folders) this.listChanged(); return true; }
     cur.team = before.team; cur.sessionNames = before.sessionNames; this.folders = before.folders;
     return false;
   }
@@ -859,6 +864,7 @@ export class FolderStore {
     const desks = Object.fromEntries(Object.entries(this.orderDoc.desks).filter(([k]) => k !== workspace));
     this.orderDoc = { ...this.orderDoc, rooms, desks };
     this.save();
+    this.listChanged();
     return true;
   }
 

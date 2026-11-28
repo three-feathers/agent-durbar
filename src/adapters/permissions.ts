@@ -181,6 +181,21 @@ export interface PathCheckOptions {
   caseInsensitive?: boolean;
 }
 
+/**
+ * The default resolver of the path check (spec 003 FR-319): native, so the long Windows form. A missing path throws as before (the caller
+ * walks up); any other native failure (some Windows volumes: RAM disks, FUSE and network drives) falls back to the JS resolver, which
+ * follows links, so a link pointing outside is never left unresolved and read as inside.
+ */
+export function brokerRealpath(x: string): string {
+  try {
+    return fs.realpathSync.native(x);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException | undefined)?.code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') throw e;
+    return fs.realpathSync(x);
+  }
+}
+
 /** Real path of `p`; when it does not exist yet, the real path of its nearest existing ancestor plus the rest. */
 function realOrNearest(p: string, o: Required<Pick<PathCheckOptions, 'flavor' | 'realpath'>>): string {
   const pm = o.flavor;
@@ -207,7 +222,8 @@ function realOrNearest(p: string, o: Required<Pick<PathCheckOptions, 'flavor' | 
 export function isInsideRoots(p: string | undefined, roots: readonly string[], opts: PathCheckOptions = {}): boolean {
   if (!p || !roots.length) return false;
   const flavor = opts.flavor ?? path;
-  const realpath = opts.realpath ?? ((x: string) => fs.realpathSync(x));
+  // Native, not the JS `fs.realpathSync`: it keeps Windows 8.3 short names (`RUNNER~1`), while the roots built elsewhere (`addkey`, `memoryops`, Codex, `main`) are the long form (spec 003 FR-319). The path and every root go through this one function.
+  const realpath = opts.realpath ?? brokerRealpath;
   const ci = opts.caseInsensitive ?? process.platform === 'win32';
   const o = { flavor, realpath };
   const norm = (x: string): string => (ci ? x.toLowerCase() : x);

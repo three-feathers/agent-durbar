@@ -142,6 +142,7 @@ function inside(p: string, root: string, o: Required<DiscoverOptions>): string |
   } catch {
     return undefined;
   }
+  // Identity resolver: `real` and `realRoot` both came from `o.fs.realpath` above, so they are the same form (spec 003 FR-319).
   return isInsideRoots(real, [realRoot], { realpath: (x) => x, caseInsensitive: o.caseInsensitive }) ? real : undefined;
 }
 
