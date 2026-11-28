@@ -177,6 +177,7 @@
     "test:memoryfolder": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memoryfolder.js",
     "test:memoryops": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memoryops.js",
     "test:memoryremote": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memoryremote.js",
+    "test:memoryroots": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-memoryroots.js",
     "test:modelchoice": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-model-choice.js",
     "test:modelswitch": "tsc -p tsconfig.scripts.json && node dist-scripts/scripts/test-modelswitch.js",
     "test:momentsregistry": "node scripts/test-moments-registry.js",

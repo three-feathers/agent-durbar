@@ -131,10 +131,10 @@ export class MemoryOps {
   private now(): number { return (this.deps.now ?? Date.now)(); }
 
   /** T002 with the office folders of this moment; an unreadable workspace file refuses (fixed words) */
-  private check(candidate: string): MemoryFolderCheck {
+  private check(candidate: string, extraOffice: readonly string[] = []): MemoryFolderCheck {
     let office: string[];
     try { office = this.deps.officeFolders(); } catch (e) { return { ok: false, reason: 'office-folder', text: wsUnreadable((e as { file?: unknown } | null)?.file) }; }
-    return checkMemoryFolder(candidate, { ...this.deps.ctx(), officeFolders: office }, this.deps.flavor);
+    return checkMemoryFolder(candidate, { ...this.deps.ctx(), officeFolders: [...office, ...extraOffice] }, this.deps.flavor);
   }
 
   /** `~` for the home folder (case folded where the platform folds); anything else as it is */
@@ -163,6 +163,21 @@ export class MemoryOps {
     if (r.ok) return { on: true, path, state: 'on', keepInGit };
     const notFound: MemoryRefusal[] = ['unreadable', 'not-folder'];
     return { on: false, path, state: notFound.includes(r.reason) ? 'notFound' : 'refused', reason: r.text, keepInGit };
+  }
+
+  /**
+   * Spec 116 FR-020/FR-023: the real path of the memory folder for a session start, or none. Empty while the memory is off, refused or not found: T002
+   * runs again now (the stored path is not trusted: the folder may have become a link, moved or been refused since), and any doubt gives none.
+   * `extraOffice`: the folders (workspace file and members included) of the session being started: a folder that holds the memory folder, or lies inside it, gets none.
+   */
+  readRoots(extraOffice: readonly string[] = []): string[] {
+    const st = this.deps.store();
+    const folder = st?.memoryFolder;
+    if (!st || folder === undefined || !st.memoryOn) return [];
+    try {
+      const r = this.check(folder, extraOffice); // the session being started is not in the office yet (main adds it after the start), so the caller names its folders
+      return r.ok ? [r.real] : [];
+    } catch { return []; }
   }
 
   /** Main's dialog, then T002; a refusal gives no token. */

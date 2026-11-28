@@ -204,6 +204,7 @@ test:roomorder
 test:memoryfolder
 test:memoryremote
 test:memoryops
+test:memoryroots
 test:railorder
 test:railsort
 test:composersize

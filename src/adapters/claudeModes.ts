@@ -168,11 +168,12 @@ export function writeIsInsideRoots(toolName: string, input: ToolInput, roots: re
  * (`isInsideRoots`: `..` collapsed, symlinks resolved), with one difference: no roots given counts as OUTSIDE here,
  * because the broker is only built with roots and this module must never widen by omission.
  */
-export function readIsInsideRoots(toolName: string, input: ToolInput, roots: readonly string[] | undefined, pathCheck?: PathCheckOptions): boolean {
+export function readIsInsideRoots(toolName: string, input: ToolInput, roots: readonly string[] | undefined, pathCheck?: PathCheckOptions, readRoots?: readonly string[]): boolean {
   if (!roots || !roots.length) return false;
   const paths = readPaths(toolName, input, roots);
   if (paths === 'outside') return false;
-  return paths.every((p) => isInsideRoots(p, roots, pathCheck));
+  const all = readRoots?.length ? [...roots, ...readRoots] : roots; // spec 116 FR-020: the memory folder counts for reads only (writeIsInsideRoots never sees it)
+  return paths.every((p) => isInsideRoots(p, all, pathCheck));
 }
 
 /**
@@ -182,10 +183,10 @@ export function readIsInsideRoots(toolName: string, input: ToolInput, roots: rea
  *  - allow: everything allowed, except `AskUserQuestion`, which needs the user (plan, "Needs the user").
  * An unknown mode behaves as read-only. `roots` empty or missing means every read is outside.
  */
-export function decideTool(mode: PermissionMode, toolName: string, input?: ToolInput, roots?: readonly string[], pathCheck?: PathCheckOptions): ToolDecision {
+export function decideTool(mode: PermissionMode, toolName: string, input?: ToolInput, roots?: readonly string[], pathCheck?: PathCheckOptions, readRoots?: readonly string[]): ToolDecision {
   const kind = toolKind(toolName);
   if (mode === 'allow') return toolName === 'AskUserQuestion' ? { behavior: 'ask', reason: 'needs the user to answer' } : { behavior: 'allow' };
-  if (kind === 'read' && readIsInsideRoots(toolName, input, roots, pathCheck)) return { behavior: 'allow' };
+  if (kind === 'read' && readIsInsideRoots(toolName, input, roots, pathCheck, readRoots)) return { behavior: 'allow' };
   const what = kind === 'read' ? `${toolName} outside the session's folders` : `${toolName} (${kind})`;
   if (mode === 'ask') return { behavior: 'ask', reason: `${what} needs your approval` };
   return { behavior: 'deny', reason: `Read-only mode: ${what} is not allowed` };
@@ -200,16 +201,16 @@ export interface PreToolUseDeny {
  * The Read-only `PreToolUse` decision: a deny for every tool that is not a read inside the roots, whatever the user's
  * own settings allow; `undefined` (no opinion, let the normal flow run) for such reads and for the other modes.
  */
-export function preToolUseDecision(mode: PermissionMode, toolName: string, input?: ToolInput, roots?: readonly string[], pathCheck?: PathCheckOptions, folderAllow?: readonly string[]): PreToolUseDeny | undefined {
+export function preToolUseDecision(mode: PermissionMode, toolName: string, input?: ToolInput, roots?: readonly string[], pathCheck?: PathCheckOptions, folderAllow?: readonly string[], readRoots?: readonly string[]): PreToolUseDeny | undefined {
   if (mode === 'ask' || mode === 'allow') return undefined;
   if (folderRuleAllows(folderAllow, toolName, input)) {
     // S1 (review #424): a folder rule covers the TOOL, never files outside the session's folders: reads and writes keep the path check
     const kind = toolKind(toolName);
-    if ((kind === 'read' && !readIsInsideRoots(toolName, input, roots, pathCheck)) || (kind === 'write' && !writeIsInsideRoots(toolName, input, roots, pathCheck)))
+    if ((kind === 'read' && !readIsInsideRoots(toolName, input, roots, pathCheck, readRoots)) || (kind === 'write' && !writeIsInsideRoots(toolName, input, roots, pathCheck)))
       return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Read-only mode: a folder rule allows ${toolName}, but not outside the session's folders` } };
     return undefined; // spec 061: an accepted folder allow rule; Claude decides
   }
-  const d = decideTool(mode, toolName, input, roots, pathCheck);
+  const d = decideTool(mode, toolName, input, roots, pathCheck, readRoots);
   if (d.behavior !== 'deny') return undefined;
   return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: d.reason } };
 }

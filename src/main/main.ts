@@ -471,8 +471,11 @@ function folderSetupStart(key: string, dirs: readonly string[], appId: string, t
   return { mcpServers: ap.mcpServers, ...(any ? { folderSetup: { hooks: ap.hooks, rules: ap.rules } } : {}), ...(hasFolderRules(ap) ? { rules: true as const } : {}) };
 }
 
+/** spec 116 F1: the folders of a session that is not in `agents` yet (the start runs before `agents.set`), as `officeFolders` lists a live one. */
+const startingFolders = (a: AgentInfo): string[] => collectOfficeFolders([{ key: wsKey(a), folders: rootsOf(a), workspaceFile: a.workspaceFile }], [], cappedWorkspaceReader(fs, memoryGitFlags(fs.constants), codeWorkspaceFoldersFromText, (p) => fs.realpathSync.native(p)));
+
 const startOptionsFor = (a: AgentInfo, resumeSessionId?: string) => {
-  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort)), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
+  const base = { ...startOptionsOf(a, wsKey(a), DEFAULT_MODEL, asEffort(a.effort), getMemoryOps()?.readRoots(startingFolders(a)) ?? []), ...mcp.optionsFor(a.id, resumeSessionId ? { agent: a, sessionId: resumeSessionId } : undefined) }; // spec 058 FR-247: a resumed session starts with its saved switches
   const appId = router.adapterIdOf(a.id) ?? a.adapterId ?? registry.defaultId;
   const fs61 = folderSetupStart(wsKey(a), a.folders ?? [a.cwd], appId, new Set(Object.keys(base.mcpServers)));
   // spec 087 FR-019 (the organization policy, read in main) and FR-007c (the stored choice); the adapter decides what they mean
@@ -991,8 +994,7 @@ registerTeamsIpc({
 });
 // spec 116 T003: the office memory folder. The window never sends a path: main's own dialog, then `checkMemoryFolder` (`fs.realpathSync.native`), then a token.
 let memoryOps: MemoryOps | undefined;
-registerMemoryIpc({
-  getOps: () => (SIMULATOR || !settingsStore ? undefined : (memoryOps ??= new MemoryOps({
+const getMemoryOps = (): MemoryOps | undefined => (SIMULATOR || !settingsStore ? undefined : (memoryOps ??= new MemoryOps({
     store: () => settingsStore,
     pick: () => pickFolder(dev, 'Choose your office memory folder'),
     flavor: { path, platform: process.platform === 'win32' || process.platform === 'darwin' ? process.platform : 'linux' },
@@ -1006,8 +1008,8 @@ registerMemoryIpc({
     officeFolders: () => collectOfficeFolders([...agents.values()].map((a) => ({ key: wsKey(a), folders: rootsOf(a), workspaceFile: a.workspaceFile })), folderStore?.list().map((f) => f.workspace) ?? [], cappedWorkspaceReader(fs, memoryGitFlags(fs.constants), codeWorkspaceFoldersFromText, (p) => fs.realpathSync.native(p))),
     remote: (real) => memoryGitRemote(fs, memoryGitFlags(fs.constants), path.join, real),
     changed: () => toRenderer('memory:changed', memoryOps?.status()),
-  }))),
-});
+  })));
+registerMemoryIpc({ getOps: getMemoryOps });
 registerOrgPolicyIpc({ view: () => orgPolicies.view() });
 registerSelfUpdateIpc({ getSelfUpdater: () => selfUpdater }); // spec 118 FR-024: version-only channels
 registerAdaptersIpc({ adaptersList });
