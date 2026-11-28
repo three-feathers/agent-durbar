@@ -425,7 +425,7 @@ async function main(): Promise<void> {
       try { fs.symlinkSync(secret, path.join(proj, 'out'), 'dir'); } catch { linked = false; console.log('permissions: SKIP native-failure link check (symlinks cannot be made here)'); }
       real.native = (x: string): string => { throw Object.assign(new Error('EISDIR: illegal operation on a directory'), { code: 'EISDIR', path: x }); };
       if (linked) assert.ok(!mutIn(path.join(proj, 'out', 's.txt'), [proj]), 'FR-319 fallback: a link out of the root stays outside when native fails with EISDIR');
-      assert.ok(!mutIn(path.join(proj, 'a.txt'), [proj]), 'FR-319: outside Windows a native failure counts as outside, no fallback');
+      withPlatform('linux', () => assert.ok(!mutIn(path.join(proj, 'a.txt'), [proj]), 'FR-319: outside Windows a native failure counts as outside, no fallback')); /* forced: the row is about the non-Windows branch, so it runs on every machine */
       withPlatform('win32', () => {
         assert.ok(mutIn(path.join(proj, 'a.txt'), [proj], { caseInsensitive: false }), 'FR-319 fallback: on Windows a plain path inside is inside when native fails with EISDIR');
         if (linked) assert.ok(!mutIn(path.join(proj, 'out', 's.txt'), [proj], { caseInsensitive: false }), 'FR-319 fallback: on Windows a link out of the root stays outside');
